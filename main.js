@@ -300,50 +300,25 @@ async function ensureDependencies() {
     // Mac - try to install via Homebrew
     return await installGraphicsMagickMac();
   } else if (process.platform === 'win32') {
-    // Windows - try winget first (built into Win10/11)
-    console.log('[Dependencies] Attempting to install GraphicsMagick via winget...');
+    // Windows - try winget first (built into Win10/11), but don't block startup
+    console.log('[Dependencies] Attempting to install GraphicsMagick via winget (background)...');
     
-    const installed = await new Promise((resolve) => {
+    // Try winget in background, don't wait or prompt
+    try {
       const install = spawn('winget', ['install', '-e', '--id', 'GraphicsMagick.GraphicsMagick', '-h'], {
         shell: true,
-        stdio: 'pipe'
+        stdio: 'ignore',
+        detached: true
       });
-      
-      install.on('close', (code) => {
-        resolve(code === 0);
-      });
-      
-      install.on('error', () => {
-        resolve(false);
-      });
-      
-      // Timeout after 60 seconds
-      setTimeout(() => {
-        install.kill();
-        resolve(false);
-      }, 60000);
-    });
-    
-    if (installed) {
-      console.log('[Dependencies] GraphicsMagick installed via winget');
-      return true;
+      install.unref(); // Don't wait for it
+      console.log('[Dependencies] GraphicsMagick install started in background');
+    } catch (err) {
+      console.log('[Dependencies] winget not available, skipping GM install');
     }
     
-    // Fallback - show manual install dialog
-    const result = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'Dependency Required',
-      message: 'GraphicsMagick is required for PDF processing.',
-      detail: 'Would you like to open the download page?\n\nAlternatively, you can install via PowerShell:\nwinget install GraphicsMagick.GraphicsMagick',
-      buttons: ['Open Download Page', 'Continue Without OCR', 'Cancel'],
-      defaultId: 0
-    });
-    
-    if (result.response === 0) {
-      require('electron').shell.openExternal('http://www.graphicsmagick.org/download.html');
-    }
-    
-    return result.response === 1; // Continue if user chose to skip
+    // Continue without blocking - GM is optional (only for scanned PDF OCR)
+    console.log('[Dependencies] Continuing without GraphicsMagick - OCR for scanned PDFs may not work');
+    return true;
   }
   
   return false;
@@ -702,7 +677,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
   }
 
-  // Create embedded browser view
+  // Create embedded browser view (but don't add it yet - wait for registration)
   browserView = new BrowserView({
     webPreferences: {
       nodeIntegration: false,
@@ -711,7 +686,8 @@ function createWindow() {
     }
   });
 
-  mainWindow.setBrowserView(browserView);
+  // DON'T add browserView here - will be added after registration via IPC
+  // mainWindow.setBrowserView(browserView);
   
   // Position: below title bar (40px) + toolbar (56px) = 96px from top
   const bounds = mainWindow.getBounds();
@@ -754,13 +730,37 @@ function updateBrowserViewBounds() {
 // IPC HANDLERS
 // ============================================
 
+// Show browser view (called after registration)
+function showBrowserView() {
+  if (mainWindow && browserView) {
+    mainWindow.setBrowserView(browserView);
+    updateBrowserViewBounds();
+    console.log('[App] Browser view now visible');
+  }
+}
+
 // Registration handlers
 ipcMain.handle('check-registration', async () => {
-  return await registerInstallation();
+  const result = await registerInstallation();
+  // If already registered, show the browser immediately
+  if (result.registered) {
+    showBrowserView();
+  }
+  return result;
 });
 
 ipcMain.handle('submit-registration', async (event, userData) => {
-  return await submitUserRegistration(userData);
+  const result = await submitUserRegistration(userData);
+  // If registration successful, show the browser
+  if (result.success) {
+    showBrowserView();
+  }
+  return result;
+});
+
+ipcMain.handle('show-browser-view', async () => {
+  showBrowserView();
+  return { success: true };
 });
 
 ipcMain.handle('navigate', async (event, url) => {
