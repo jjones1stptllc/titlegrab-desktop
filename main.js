@@ -1296,6 +1296,7 @@ let updateCheckInterval;
 let pendingUpdateInfo = null;
 let isDownloading = false;
 let snoozeTimeout = null;
+let isManualUpdateCheck = false;
 
 function setupAutoUpdater() {
   if (isDev) {
@@ -1321,6 +1322,7 @@ function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
     console.log('[AutoUpdate] Update available:', info.version);
     pendingUpdateInfo = info;
+    isManualUpdateCheck = false;
     
     if (mainWindow?.webContents) {
       mainWindow.webContents.send('update-status', { status: 'available', version: info.version });
@@ -1334,6 +1336,18 @@ function setupAutoUpdater() {
     console.log('[AutoUpdate] No updates available');
     if (mainWindow?.webContents) {
       mainWindow.webContents.send('update-status', { status: 'up-to-date' });
+    }
+    
+    // Show dialog only for manual checks
+    if (isManualUpdateCheck) {
+      isManualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Up to Date',
+        message: 'TitleGrab Pro is up to date!',
+        detail: `You are running version ${app.getVersion()}`,
+        buttons: ['OK']
+      });
     }
   });
 
@@ -1595,8 +1609,10 @@ function createAppMenu() {
               return;
             }
             try {
+              isManualUpdateCheck = true;
               await autoUpdater.checkForUpdates();
             } catch (err) {
+              isManualUpdateCheck = false;
               dialog.showErrorBox('Update Check Failed', err.message);
             }
           }
