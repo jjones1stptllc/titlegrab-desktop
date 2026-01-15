@@ -1443,6 +1443,19 @@ function setupAutoUpdater() {
   autoUpdater.on('error', (err) => {
     console.error('[AutoUpdate] Error:', err);
     isDownloading = false;
+    
+    // Show error dialog for manual checks
+    if (isManualUpdateCheck) {
+      isManualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Update Check Failed',
+        message: 'Could not check for updates.',
+        detail: err.message || 'Please try again later.',
+        buttons: ['OK']
+      });
+    }
+    
     if (mainWindow?.webContents) {
       mainWindow.webContents.send('update-status', { status: 'error', message: err.message });
     }
@@ -1698,11 +1711,26 @@ function createAppMenu() {
               return;
             }
             try {
-              isManualUpdateCheck = true;
-              await autoUpdater.checkForUpdates();
+              const result = await autoUpdater.checkForUpdates();
+              // Check result directly - don't rely on events
+              if (!result?.updateInfo?.version || result.updateInfo.version === app.getVersion()) {
+                dialog.showMessageBox(mainWindow, {
+                  type: 'info',
+                  title: 'Up to Date',
+                  message: 'TitleGrab Pro is up to date!',
+                  detail: `You are running version ${app.getVersion()}`,
+                  buttons: ['OK']
+                });
+              }
+              // If update available, the 'update-available' event will show the dialog
             } catch (err) {
-              isManualUpdateCheck = false;
-              dialog.showErrorBox('Update Check Failed', err.message);
+              dialog.showMessageBox(mainWindow, {
+                type: 'error',
+                title: 'Update Check Failed',
+                message: 'Could not check for updates.',
+                detail: err.message || 'Please try again later.',
+                buttons: ['OK']
+              });
             }
           }
         },
