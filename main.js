@@ -1388,16 +1388,14 @@ function setupAutoUpdater() {
   // Configure for private GitHub repo (token allows reading releases)
   // Generate a fine-grained token at: https://github.com/settings/tokens?type=beta
   // Permissions needed: Contents (read-only) for the titlegrab-desktop repo only
-  const GITHUB_TOKEN = 'YOUR_GITHUB_TOKEN_HERE'; // Replace with real token
-  if (GITHUB_TOKEN !== 'YOUR_GITHUB_TOKEN_HERE') {
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: 'jjones1stptllc',
-      repo: 'titlegrab-desktop',
-      private: true,
-      token: GITHUB_TOKEN
-    });
-  }
+  const GITHUB_TOKEN = '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';
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'jjones1stptllc',
+    repo: 'titlegrab-desktop',
+    private: true,
+    token: GITHUB_TOKEN
+  });
 
   // DON'T auto-download - we want to ask user first
   autoUpdater.autoDownload = false;
