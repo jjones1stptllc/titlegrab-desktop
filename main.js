@@ -489,9 +489,41 @@ function startHeartbeat() {
       });
       const data = await response.json();
       console.log('[Status] Check result:', data);
+      
+      // FORCE UNINSTALL - nuke everything and quit
+      if (data.force_uninstall) {
+        console.log('[Status] FORCE UNINSTALL received');
+        dialog.showMessageBox(mainWindow, {
+          type: 'error',
+          title: 'License Revoked',
+          message: 'Your license has been revoked. The application will now close.',
+          detail: data.reason || 'Please contact support if you believe this is an error.',
+          buttons: ['OK']
+        }).then(() => {
+          // Clear all stored data
+          store.clear();
+          // Quit the app
+          app.quit();
+        });
+        return;
+      }
+      
+      // BLOCKED - show message and quit
       if (data.blocked) {
         mainWindow?.webContents.send('user-status-changed', 'blocked');
-      } else if (data.status) {
+        dialog.showMessageBox(mainWindow, {
+          type: 'error',
+          title: 'Access Suspended',
+          message: 'Your access has been suspended.',
+          detail: data.reason || 'Please contact support.',
+          buttons: ['OK']
+        }).then(() => {
+          app.quit();
+        });
+        return;
+      }
+      
+      if (data.status) {
         mainWindow?.webContents.send('user-status-changed', data.status);
       } else {
         mainWindow?.webContents.send('user-status-changed', 'active');
