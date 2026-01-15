@@ -1,6 +1,6 @@
 {
   "name": "titlegrab-desktop",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "TitleGrab Pro Desktop - Live Research & Report Generation",
   "author": "1st PT LLC <support@titlegrab.com>",
   "main": "main.js",
@@ -123,7 +123,8 @@
       "icon": "assets/icon.icns",
       "target": [
         "dmg",
-        "pkg"
+        "pkg",
+        "zip"
       ],
       "extraResources": [
         {
