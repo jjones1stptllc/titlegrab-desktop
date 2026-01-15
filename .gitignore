@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Build output
+dist/
+release/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Electron
+out/
+
+# Misc
+*.pem

@@ -1,0 +1,209 @@
+{
+  "name": "titlegrab-desktop",
+  "version": "1.0.1",
+  "description": "TitleGrab Pro Desktop - Live Research & Report Generation",
+  "author": "1st PT LLC <support@titlegrab.com>",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run react-dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "react-dev": "vite",
+    "build": "vite build && electron-builder",
+    "build:react": "vite build",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "vite build && electron-builder --mac",
+    "dist:win": "vite build && electron-builder --win",
+    "install-backend": "cd backend && npm install",
+    "postinstall": "npm run install-backend"
+  },
+  "build": {
+    "appId": "com.1stptllc.titlegrab",
+    "productName": "TitleGrab Pro",
+    "copyright": "© 2025 1st PT LLC. All Rights Reserved.",
+    "publish": {
+      "provider": "github",
+      "owner": "jjones1stptllc",
+      "repo": "titlegrab-desktop"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**/*",
+      "node_modules/pdf2pic/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**/*",
+      "LICENSE.txt",
+      "!node_modules/**/*",
+      "node_modules/electron-store/**/*",
+      "node_modules/electron-updater/**/*",
+      "node_modules/electron-log/**/*",
+      "node_modules/builder-util-runtime/**/*",
+      "node_modules/debug/**/*",
+      "node_modules/ms/**/*",
+      "node_modules/sax/**/*",
+      "node_modules/fs-extra/**/*",
+      "node_modules/graceful-fs/**/*",
+      "node_modules/jsonfile/**/*",
+      "node_modules/universalify/**/*",
+      "node_modules/js-yaml/**/*",
+      "node_modules/argparse/**/*",
+      "node_modules/lazy-val/**/*",
+      "node_modules/lodash.escaperegexp/**/*",
+      "node_modules/lodash.isequal/**/*",
+      "node_modules/semver/**/*",
+      "node_modules/tiny-typed-emitter/**/*",
+      "node_modules/conf/**/*",
+      "node_modules/ajv/**/*",
+      "node_modules/ajv-formats/**/*",
+      "node_modules/fast-deep-equal/**/*",
+      "node_modules/fast-uri/**/*",
+      "node_modules/json-schema-traverse/**/*",
+      "node_modules/require-from-string/**/*",
+      "node_modules/atomically/**/*",
+      "node_modules/debounce-fn/**/*",
+      "node_modules/mimic-fn/**/*",
+      "node_modules/dot-prop/**/*",
+      "node_modules/is-obj/**/*",
+      "node_modules/env-paths/**/*",
+      "node_modules/json-schema-typed/**/*",
+      "node_modules/onetime/**/*",
+      "node_modules/pkg-up/**/*",
+      "node_modules/find-up/**/*",
+      "node_modules/locate-path/**/*",
+      "node_modules/p-locate/**/*",
+      "node_modules/p-limit/**/*",
+      "node_modules/p-try/**/*",
+      "node_modules/path-exists/**/*",
+      "node_modules/type-fest/**/*",
+      "node_modules/node-fetch/**/*",
+      "node_modules/whatwg-url/**/*",
+      "node_modules/tr46/**/*",
+      "node_modules/webidl-conversions/**/*",
+      "node_modules/form-data/**/*",
+      "node_modules/asynckit/**/*",
+      "node_modules/combined-stream/**/*",
+      "node_modules/delayed-stream/**/*",
+      "node_modules/mime-types/**/*",
+      "node_modules/mime-db/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!node_modules/.cache/**/*",
+          "!uploads/**/*",
+          "!temp/**/*",
+          "!captures/**/*",
+          "!screenshots/**/*",
+          "!ocr-output/**/*",
+          "!results/**/*",
+          "!reports/**/*"
+        ]
+      },
+      {
+        "from": "bin/${os}",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "icon": "assets/icon.icns",
+      "target": [
+        "dmg",
+        "pkg"
+      ],
+      "extraResources": [
+        {
+          "from": "bin/mac",
+          "to": "bin"
+        }
+      ]
+    },
+    "pkg": {
+      "license": "LICENSE.rtf",
+      "installLocation": "/Applications",
+      "allowAnywhere": false,
+      "allowCurrentUserHome": false,
+      "allowRootDirectory": false,
+      "isRelocatable": false
+    },
+    "dmg": {
+      "title": "TitleGrab Pro",
+      "icon": "assets/icon.icns",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "bin/win",
+          "to": "bin"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TitleGrab Pro",
+      "license": "LICENSE.rtf"
+    }
+  },
+  "dependencies": {
+    "electron-log": "^5.4.3",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.7.3",
+    "form-data": "^4.0.0",
+    "fs-extra": "^11.3.3",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "^8.4.32",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.4.0",
+    "vite": "^5.4.21",
+    "wait-on": "^7.2.0"
+  }
+}

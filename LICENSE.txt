@@ -1,0 +1,175 @@
+TITLEGRAB PRO SOFTWARE LICENSE AGREEMENT
+END USER LICENSE AGREEMENT (EULA)
+
+Last Updated: January 2025
+
+IMPORTANT - READ CAREFULLY: This End User License Agreement ("Agreement") is a legal agreement between you ("User," "You," or "Your") and 1st PT LLC, a Virginia limited liability company ("Company," "We," "Us," or "Our"), for the use of TitleGrab Pro software application, including any associated documentation, updates, and support services (collectively, the "Software").
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE TO THESE TERMS, DO NOT INSTALL OR USE THE SOFTWARE.
+
+1. LICENSE GRANT
+
+1.1 Limited License. Subject to the terms of this Agreement, Company grants You a limited, non-exclusive, non-transferable, revocable license to install and use the Software solely for Your internal business purposes in connection with legitimate title search and research activities.
+
+1.2 Scope of License. This license permits You to:
+   (a) Install the Software on devices owned or controlled by You;
+   (b) Use the Software to capture, process, and analyze publicly available property records;
+   (c) Generate reports using data You have lawfully obtained.
+
+1.3 License Restrictions. You may NOT:
+   (a) Copy, modify, adapt, translate, reverse engineer, decompile, disassemble, or create derivative works based on the Software;
+   (b) Rent, lease, loan, sell, sublicense, distribute, or otherwise transfer the Software to any third party;
+   (c) Remove, alter, or obscure any proprietary notices, labels, or marks on the Software;
+   (d) Use the Software for any unlawful purpose or in violation of any applicable laws or regulations;
+   (e) Circumvent, disable, or interfere with any security features or access controls of the Software;
+   (f) Use the Software to access, collect, or process data in violation of privacy laws or third-party rights;
+   (g) Share Your login credentials or allow unauthorized users to access the Software;
+   (h) Use automated tools, scripts, or bots to interact with the Software except as expressly permitted;
+   (i) Attempt to gain unauthorized access to any systems, networks, or data connected to the Software.
+
+2. INTELLECTUAL PROPERTY RIGHTS
+
+2.1 Ownership. The Software, including all copies, modifications, enhancements, and derivative works, is the exclusive property of Company and is protected by copyright, trade secret, and other intellectual property laws. This Agreement does not grant You any ownership rights in the Software.
+
+2.2 Trademarks. "TitleGrab Pro," "1st PT LLC," and associated logos are trademarks of Company. You may not use these trademarks without prior written consent.
+
+2.3 Feedback. Any feedback, suggestions, or ideas You provide regarding the Software may be used by Company without any obligation to You.
+
+3. DATA COLLECTION AND PRIVACY
+
+3.1 Data We Collect. The Software may collect and transmit the following information to Company servers:
+   (a) Device identifiers and system information;
+   (b) Usage statistics and feature utilization data;
+   (c) Error reports and diagnostic information;
+   (d) URLs visited within the embedded browser (for compliance monitoring);
+   (e) Report generation activity and timestamps.
+
+3.2 Purpose of Collection. This data is collected to:
+   (a) Verify license compliance and prevent unauthorized use;
+   (b) Improve Software performance and features;
+   (c) Provide technical support;
+   (d) Detect and prevent fraud, abuse, or security threats.
+
+3.3 Your Data. Documents, images, and reports You process using the Software remain Your property. Company does not claim ownership of Your content. However, processed data may be temporarily stored on Company servers for processing purposes.
+
+3.4 Third-Party Services. The Software utilizes third-party services for AI processing and cloud infrastructure. Your use of the Software constitutes acceptance of applicable third-party terms.
+
+4. SECURITY AND COMPLIANCE
+
+4.1 Security Measures. The Software includes security measures to protect against unauthorized use, tampering, and reverse engineering. Attempting to circumvent these measures is a material breach of this Agreement and may result in immediate termination and legal action.
+
+4.2 Monitoring. Company reserves the right to monitor Software usage to ensure compliance with this Agreement and applicable laws. Suspicious activity may be reported to appropriate authorities.
+
+4.3 Account Suspension. Company may suspend or terminate Your access to the Software immediately and without notice if:
+   (a) You breach any term of this Agreement;
+   (b) Suspicious or fraudulent activity is detected;
+   (c) Security threats or tampering attempts are identified;
+   (d) Required by law or legal process.
+
+5. BETA SOFTWARE DISCLAIMER
+
+5.1 Beta Status. If You are using a beta, evaluation, or pre-release version of the Software, You acknowledge that:
+   (a) The Software is provided "as-is" for testing and evaluation purposes;
+   (b) The Software may contain bugs, errors, and incomplete features;
+   (c) The Software may be unstable and could cause data loss or system issues;
+   (d) Features may change or be removed without notice;
+   (e) Company has no obligation to release a commercial version.
+
+5.2 Beta Feedback. As a beta user, You agree to provide reasonable feedback about Software performance, bugs, and usability when requested.
+
+6. DISCLAIMER OF WARRANTIES
+
+6.1 AS-IS BASIS. THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. COMPANY EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO:
+   (a) IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE;
+   (b) WARRANTIES OF NON-INFRINGEMENT OR TITLE;
+   (c) WARRANTIES THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS;
+   (d) WARRANTIES THAT THE SOFTWARE WILL BE UNINTERRUPTED, TIMELY, SECURE, OR ERROR-FREE;
+   (e) WARRANTIES REGARDING THE ACCURACY OR RELIABILITY OF ANY RESULTS OBTAINED FROM THE SOFTWARE.
+
+6.2 No Professional Advice. THE SOFTWARE IS A TOOL TO ASSIST WITH TITLE RESEARCH. IT DOES NOT PROVIDE LEGAL, FINANCIAL, OR PROFESSIONAL ADVICE. YOU ARE SOLELY RESPONSIBLE FOR VERIFYING ALL INFORMATION AND MAKING INDEPENDENT JUDGMENTS. COMPANY IS NOT A TITLE COMPANY, LAW FIRM, OR LICENSED PROFESSIONAL SERVICE PROVIDER.
+
+6.3 Third-Party Content. Company does not guarantee the accuracy, completeness, or availability of any third-party data, websites, or services accessed through the Software.
+
+7. LIMITATION OF LIABILITY
+
+7.1 EXCLUSION OF DAMAGES. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL COMPANY, ITS OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, MEMBERS, OR AFFILIATES (INCLUDING JOSEPH JONES INDIVIDUALLY) BE LIABLE FOR ANY:
+   (a) INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES;
+   (b) LOSS OF PROFITS, REVENUE, DATA, BUSINESS OPPORTUNITIES, OR GOODWILL;
+   (c) COST OF SUBSTITUTE GOODS OR SERVICES;
+   (d) DAMAGES ARISING FROM RELIANCE ON INFORMATION OBTAINED THROUGH THE SOFTWARE;
+   (e) DAMAGES RESULTING FROM UNAUTHORIZED ACCESS TO OR ALTERATION OF YOUR DATA;
+   (f) DAMAGES CAUSED BY THIRD-PARTY PRODUCTS, SERVICES, OR WEBSITES;
+
+REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, STRICT LIABILITY, OR OTHERWISE), EVEN IF COMPANY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+7.2 MAXIMUM LIABILITY. COMPANY'S TOTAL CUMULATIVE LIABILITY FOR ALL CLAIMS ARISING FROM OR RELATED TO THIS AGREEMENT OR THE SOFTWARE SHALL NOT EXCEED THE GREATER OF: (A) THE AMOUNT YOU PAID FOR THE SOFTWARE IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM, OR (B) ONE HUNDRED U.S. DOLLARS ($100.00).
+
+7.3 ESSENTIAL PURPOSE. THE LIMITATIONS IN THIS SECTION SHALL APPLY EVEN IF ANY LIMITED REMEDY FAILS OF ITS ESSENTIAL PURPOSE.
+
+8. INDEMNIFICATION
+
+8.1 Your Indemnification. You agree to indemnify, defend, and hold harmless Company, its officers, directors, employees, agents, members, and affiliates (including Joseph Jones individually) from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees) arising from or related to:
+   (a) Your use or misuse of the Software;
+   (b) Your violation of this Agreement;
+   (c) Your violation of any applicable law or third-party rights;
+   (d) Any content, data, or materials You process using the Software;
+   (e) Any claims by third parties related to Your use of the Software.
+
+9. TERM AND TERMINATION
+
+9.1 Term. This Agreement is effective until terminated.
+
+9.2 Termination by You. You may terminate this Agreement at any time by uninstalling the Software and destroying all copies in Your possession.
+
+9.3 Termination by Company. Company may terminate this Agreement immediately, without notice, if You breach any term of this Agreement or if Company discontinues the Software.
+
+9.4 Effect of Termination. Upon termination:
+   (a) All licenses granted herein immediately terminate;
+   (b) You must immediately cease using the Software;
+   (c) You must uninstall and destroy all copies of the Software;
+   (d) Sections 2, 6, 7, 8, 10, and 11 shall survive termination.
+
+10. GOVERNING LAW AND DISPUTE RESOLUTION
+
+10.1 Governing Law. This Agreement shall be governed by and construed in accordance with the laws of the Commonwealth of Virginia, United States, without regard to its conflict of law principles.
+
+10.2 Jurisdiction. You agree to submit to the exclusive jurisdiction of the state and federal courts located in Rockingham County, Virginia, for any disputes arising from this Agreement.
+
+10.3 Arbitration. At Company's sole discretion, any dispute arising from this Agreement may be resolved through binding arbitration administered by the American Arbitration Association under its Commercial Arbitration Rules. The arbitration shall take place in Harrisonburg, Virginia, and the arbitrator's decision shall be final and binding.
+
+10.4 Class Action Waiver. YOU AGREE THAT ANY CLAIMS MUST BE BROUGHT IN YOUR INDIVIDUAL CAPACITY AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS OR REPRESENTATIVE PROCEEDING.
+
+10.5 Attorneys' Fees. In any action to enforce this Agreement, the prevailing party shall be entitled to recover reasonable attorneys' fees and costs.
+
+11. GENERAL PROVISIONS
+
+11.1 Entire Agreement. This Agreement constitutes the entire agreement between You and Company regarding the Software and supersedes all prior agreements, understandings, and communications.
+
+11.2 Amendment. Company may modify this Agreement at any time by posting the revised terms. Your continued use of the Software after such modifications constitutes acceptance of the revised terms.
+
+11.3 Severability. If any provision of this Agreement is held invalid or unenforceable, the remaining provisions shall continue in full force and effect.
+
+11.4 Waiver. Company's failure to enforce any right or provision shall not constitute a waiver of such right or provision.
+
+11.5 Assignment. You may not assign or transfer this Agreement without Company's prior written consent. Company may assign this Agreement without restriction.
+
+11.6 Notices. Company may provide notices to You through the Software interface, email, or postal mail.
+
+11.7 Force Majeure. Company shall not be liable for any failure or delay due to circumstances beyond its reasonable control.
+
+11.8 Export Compliance. You agree to comply with all applicable export laws and regulations. You represent that You are not located in a country subject to U.S. embargo or designated as a "terrorist supporting" country.
+
+11.9 U.S. Government Users. The Software is "commercial computer software" as defined in 48 C.F.R. 2.101. Government users receive only those rights granted to non-government users.
+
+12. CONTACT INFORMATION
+
+For questions about this Agreement or the Software:
+
+1st PT LLC
+Edinburg, Virginia
+United States
+Email: support@titlegrab.com
+
+BY CLICKING "I ACCEPT" OR INSTALLING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.
+
+Copyright © 2025 1st PT LLC. All rights reserved.
