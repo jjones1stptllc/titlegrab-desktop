@@ -673,9 +673,10 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.focus();
-    // On macOS, also activate the app
+    // On macOS, force the app to become active and frontmost
     if (process.platform === 'darwin') {
       app.dock.show();
+      app.focus({ steal: true });
     }
   });
   
@@ -1383,7 +1384,16 @@ app.whenReady().then(async () => {
     callback(true);
   });
   
-  // Check and install dependencies (GraphicsMagick for PDF OCR)
+  // Create window FIRST so app appears immediately
+  createWindow();
+  setupBrowserViewEvents();
+  
+  // Force app to front on macOS
+  if (process.platform === 'darwin') {
+    app.focus({ steal: true });
+  }
+  
+  // Now do background initialization (user sees loading in app)
   console.log('[App] Checking dependencies...');
   const depsOk = await ensureDependencies();
   if (!depsOk) {
@@ -1400,9 +1410,6 @@ app.whenReady().then(async () => {
     console.error('[App] Failed to start backend:', err);
     dialog.showErrorBox('Backend Error', 'Failed to start the processing server. Please restart the application.');
   }
-  
-  createWindow();
-  setupBrowserViewEvents();
   
   // Register with admin panel and start heartbeat
   await registerInstallation();

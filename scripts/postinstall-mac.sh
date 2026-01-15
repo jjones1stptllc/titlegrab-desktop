@@ -22,4 +22,12 @@ else
 fi
 
 echo "Setup complete!"
+
+# Launch the app after installation (as the logged-in user, not root)
+LOGGED_IN_USER=$(stat -f "%Su" /dev/console)
+if [ -d "/Applications/TitleGrab Pro.app" ]; then
+    echo "Launching TitleGrab Pro..."
+    sudo -u "$LOGGED_IN_USER" open "/Applications/TitleGrab Pro.app"
+fi
+
 exit 0
