@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, session, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -473,7 +473,7 @@ function startHeartbeat() {
     await trackEvent('heartbeat');
   }, 5 * 60 * 1000);
   
-  // Also start status check interval - check every 10 seconds
+  // Also start status check interval - check every 15 seconds
   setInterval(async () => {
     const userId = store.get('userId');
     if (!userId) {
@@ -532,7 +532,7 @@ function startHeartbeat() {
       console.error('[Status] Check failed:', error.message);
       mainWindow?.webContents.send('user-status-changed', 'offline');
     }
-  }, 10000);
+  }, 15000);
 }
 
 function stopHeartbeat() {
@@ -1292,6 +1292,11 @@ function setupBrowserViewEvents() {
 // AUTO-UPDATER
 // ============================================
 
+let updateCheckInterval;
+let pendingUpdateInfo = null;
+let isDownloading = false;
+let snoozeTimeout = null;
+
 function setupAutoUpdater() {
   if (isDev) {
     console.log('[AutoUpdate] Skipping in development mode');
@@ -1302,54 +1307,49 @@ function setupAutoUpdater() {
   autoUpdater.logger = require('electron-log');
   autoUpdater.logger.transports.file.level = 'info';
 
-  // AUTO-DOWNLOAD and AUTO-INSTALL - force updates
-  autoUpdater.autoDownload = true;
+  // DON'T auto-download - we want to ask user first
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  // Check for updates silently on startup
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdate] Checking for updates...');
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { status: 'checking' });
+    }
   });
 
   autoUpdater.on('update-available', (info) => {
     console.log('[AutoUpdate] Update available:', info.version);
+    pendingUpdateInfo = info;
     
-    // Notify renderer about available update
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('update-available', {
-        version: info.version,
-        releaseDate: info.releaseDate,
-        releaseNotes: info.releaseNotes
-      });
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { status: 'available', version: info.version });
     }
     
-    // Show notification (auto-downloading in background)
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Available',
-      message: `Downloading update v${info.version}...`,
-      detail: 'The update will install automatically when ready.',
-      buttons: ['OK'],
-      defaultId: 0
-    });
+    // Show snooze dialog
+    showUpdateAvailableDialog(info);
   });
 
   autoUpdater.on('update-not-available', (info) => {
-    console.log('[AutoUpdate] No updates available, current version is latest');
+    console.log('[AutoUpdate] No updates available');
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { status: 'up-to-date' });
+    }
   });
 
   autoUpdater.on('error', (err) => {
     console.error('[AutoUpdate] Error:', err);
-    // Don't bother user with update errors unless they initiated a manual check
+    isDownloading = false;
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { status: 'error', message: err.message });
+    }
   });
 
   autoUpdater.on('download-progress', (progressObj) => {
-    const logMessage = `Download speed: ${Math.round(progressObj.bytesPerSecond / 1024)} KB/s - ` +
-      `${Math.round(progressObj.percent)}% (${Math.round(progressObj.transferred / 1024 / 1024)}MB / ${Math.round(progressObj.total / 1024 / 1024)}MB)`;
+    const logMessage = `Download: ${Math.round(progressObj.percent)}% (${Math.round(progressObj.transferred / 1024 / 1024)}MB / ${Math.round(progressObj.total / 1024 / 1024)}MB)`;
     console.log('[AutoUpdate]', logMessage);
     
-    // Send progress to renderer
-    if (mainWindow && mainWindow.webContents) {
+    if (mainWindow?.webContents) {
       mainWindow.webContents.send('update-progress', {
         percent: progressObj.percent,
         transferred: progressObj.transferred,
@@ -1361,47 +1361,266 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log('[AutoUpdate] Update downloaded:', info.version);
+    isDownloading = false;
     
-    // Notify renderer
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('update-downloaded', { version: info.version });
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { status: 'downloaded', version: info.version });
     }
     
-    // Auto-restart to install (force update)
+    // Prompt to restart
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Update Ready',
-      message: 'Update downloaded!',
-      detail: 'The application will now restart to install the update.',
-      buttons: ['Restart Now'],
+      message: `Update v${info.version} is ready!`,
+      detail: 'Restart now to complete the installation?',
+      buttons: ['Restart Now', 'Later'],
       defaultId: 0
-    }).then(() => {
-      console.log('[AutoUpdate] Restarting to install update...');
-      autoUpdater.quitAndInstall(false, true);
+    }).then(result => {
+      if (result.response === 0) {
+        console.log('[AutoUpdate] Restarting to install...');
+        autoUpdater.quitAndInstall(false, true);
+      } else {
+        console.log('[AutoUpdate] User chose to restart later');
+      }
     });
   });
 
-  // Check for updates after a short delay (let app fully load first)
+  // Check for updates on startup after 5 second delay
   setTimeout(() => {
-    console.log('[AutoUpdate] Checking for updates...');
     autoUpdater.checkForUpdates().catch(err => {
-      console.log('[AutoUpdate] Check failed (may be offline):', err.message);
+      console.log('[AutoUpdate] Startup check failed:', err.message);
     });
   }, 5000);
+
+  // Check for updates every 3 hours
+  updateCheckInterval = setInterval(() => {
+    console.log('[AutoUpdate] Scheduled 3-hour check...');
+    autoUpdater.checkForUpdates().catch(err => {
+      console.log('[AutoUpdate] Scheduled check failed:', err.message);
+    });
+  }, 3 * 60 * 60 * 1000); // 3 hours
 }
 
-// IPC handler for manual update check
+function showUpdateAvailableDialog(info) {
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Update Available',
+    message: `Version ${info.version} is available!`,
+    detail: 'Would you like to download and install this update?',
+    buttons: ['Update Now', 'Snooze'],
+    defaultId: 0,
+    cancelId: 1
+  }).then(result => {
+    if (result.response === 0) {
+      // Start download
+      startUpdateDownload();
+    } else {
+      // Show snooze options
+      showSnoozeDialog(info);
+    }
+  });
+}
+
+function showSnoozeDialog(info) {
+  dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    title: 'Snooze Update',
+    message: 'Remind me about this update in:',
+    buttons: ['15 minutes', '30 minutes', '1 hour', '3 hours', '6 hours', '12 hours', '24 hours'],
+    defaultId: 2,
+    cancelId: -1
+  }).then(result => {
+    const snoozeMinutes = [15, 30, 60, 180, 360, 720, 1440][result.response] || 60;
+    console.log(`[AutoUpdate] Snoozed for ${snoozeMinutes} minutes`);
+    
+    // Clear any existing snooze
+    if (snoozeTimeout) {
+      clearTimeout(snoozeTimeout);
+    }
+    
+    // Set snooze reminder
+    snoozeTimeout = setTimeout(() => {
+      if (pendingUpdateInfo) {
+        showUpdateAvailableDialog(pendingUpdateInfo);
+      }
+    }, snoozeMinutes * 60 * 1000);
+    
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send('update-status', { 
+        status: 'snoozed', 
+        version: info.version,
+        snoozeMinutes 
+      });
+    }
+  });
+}
+
+function startUpdateDownload() {
+  if (isDownloading) {
+    console.log('[AutoUpdate] Download already in progress');
+    return;
+  }
+  
+  isDownloading = true;
+  console.log('[AutoUpdate] Starting download...');
+  
+  if (mainWindow?.webContents) {
+    mainWindow.webContents.send('update-status', { status: 'downloading' });
+  }
+  
+  autoUpdater.downloadUpdate().catch(err => {
+    console.error('[AutoUpdate] Download failed:', err);
+    isDownloading = false;
+    dialog.showErrorBox('Update Failed', `Failed to download update: ${err.message}`);
+  });
+}
+
+// IPC handler for manual update check (Help menu)
 ipcMain.handle('check-for-updates', async () => {
   if (isDev) {
     return { success: false, message: 'Updates disabled in development' };
   }
   try {
     const result = await autoUpdater.checkForUpdates();
+    if (!result?.updateInfo?.version || result.updateInfo.version === app.getVersion()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'No Updates',
+        message: 'You are running the latest version!',
+        detail: `Current version: ${app.getVersion()}`,
+        buttons: ['OK']
+      });
+    }
     return { success: true, updateInfo: result?.updateInfo };
   } catch (err) {
+    dialog.showErrorBox('Update Check Failed', err.message);
     return { success: false, message: err.message };
   }
 });
+
+// IPC handler to trigger download manually
+ipcMain.handle('download-update', async () => {
+  if (pendingUpdateInfo) {
+    startUpdateDownload();
+    return { success: true };
+  }
+  return { success: false, message: 'No update available' };
+});
+
+// ============================================
+// APPLICATION MENU
+// ============================================
+
+function createAppMenu() {
+  const isMac = process.platform === 'darwin';
+  
+  const template = [
+    // App menu (macOS only)
+    ...(isMac ? [{
+      label: app.getName(),
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    // File menu
+    {
+      label: 'File',
+      submenu: [
+        isMac ? { role: 'close' } : { role: 'quit' }
+      ]
+    },
+    // Edit menu
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    // View menu
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    // Window menu
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' }
+        ] : [
+          { role: 'close' }
+        ])
+      ]
+    },
+    // Help menu
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Check for Updates...',
+          click: async () => {
+            if (isDev) {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Development Mode',
+                message: 'Updates are disabled in development mode.',
+                buttons: ['OK']
+              });
+              return;
+            }
+            try {
+              await autoUpdater.checkForUpdates();
+            } catch (err) {
+              dialog.showErrorBox('Update Check Failed', err.message);
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'About TitleGrab Pro',
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'About TitleGrab Pro',
+              message: 'TitleGrab Pro',
+              detail: `Version ${app.getVersion()}\n\n© 2024 1st PT LLC\nAll rights reserved.`,
+              buttons: ['OK']
+            });
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
 
 // ============================================
 // APP LIFECYCLE
@@ -1418,6 +1637,7 @@ app.whenReady().then(async () => {
   
   // Create window FIRST so app appears immediately
   createWindow();
+  createAppMenu();
   setupBrowserViewEvents();
   
   // Force app to front on macOS
