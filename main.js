@@ -523,6 +523,21 @@ function startHeartbeat() {
         return;
       }
       
+      // PENDING - not yet authorized
+      if (data.status === 'pending') {
+        mainWindow?.webContents.send('user-status-changed', 'pending');
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Awaiting Authorization',
+          message: 'Your account is pending approval.',
+          detail: 'Please wait for an administrator to activate your account. The application will now close.',
+          buttons: ['OK']
+        }).then(() => {
+          app.quit();
+        });
+        return;
+      }
+      
       if (data.status) {
         mainWindow?.webContents.send('user-status-changed', data.status);
       } else {
@@ -533,6 +548,68 @@ function startHeartbeat() {
       mainWindow?.webContents.send('user-status-changed', 'offline');
     }
   }, 15000);
+}
+
+// Initial status check on startup (before heartbeat starts)
+async function checkInitialStatus() {
+  const userId = store.get('userId');
+  if (!userId) return true; // Not registered yet, will go through registration flow
+  
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const response = await fetch(ADMIN_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'check_status', user_id: userId })
+    });
+    const data = await response.json();
+    console.log('[Status] Initial check result:', data);
+    
+    // FORCE UNINSTALL
+    if (data.force_uninstall) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'License Revoked',
+        message: 'Your license has been revoked.',
+        detail: data.reason || 'Please contact support.',
+        buttons: ['OK']
+      });
+      store.clear();
+      app.quit();
+      return false;
+    }
+    
+    // BLOCKED
+    if (data.blocked) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Access Suspended',
+        message: 'Your access has been suspended.',
+        detail: data.reason || 'Please contact support.',
+        buttons: ['OK']
+      });
+      app.quit();
+      return false;
+    }
+    
+    // PENDING - awaiting authorization
+    if (data.status === 'pending') {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Awaiting Authorization',
+        message: 'Your account is pending approval.',
+        detail: 'Please wait for an administrator to activate your account. The application will now close.',
+        buttons: ['OK']
+      });
+      app.quit();
+      return false;
+    }
+    
+    return true; // Active or other valid status
+  } catch (error) {
+    console.error('[Status] Initial check failed:', error.message);
+    return true; // Allow offline usage
+  }
 }
 
 function stopHeartbeat() {
@@ -1308,6 +1385,20 @@ function setupAutoUpdater() {
   autoUpdater.logger = require('electron-log');
   autoUpdater.logger.transports.file.level = 'info';
 
+  // Configure for private GitHub repo (token allows reading releases)
+  // Generate a fine-grained token at: https://github.com/settings/tokens?type=beta
+  // Permissions needed: Contents (read-only) for the titlegrab-desktop repo only
+  const GITHUB_TOKEN = 'YOUR_GITHUB_TOKEN_HERE'; // Replace with real token
+  if (GITHUB_TOKEN !== 'YOUR_GITHUB_TOKEN_HERE') {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'jjones1stptllc',
+      repo: 'titlegrab-desktop',
+      private: true,
+      token: GITHUB_TOKEN
+    });
+  }
+
   // DON'T auto-download - we want to ask user first
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -1679,8 +1770,13 @@ app.whenReady().then(async () => {
     dialog.showErrorBox('Backend Error', 'Failed to start the processing server. Please restart the application.');
   }
   
-  // Register with admin panel and start heartbeat
+  // Register with admin panel and check initial status
   await registerInstallation();
+  
+  // Check if user is authorized (blocks pending/blocked users immediately)
+  const authorized = await checkInitialStatus();
+  if (!authorized) return; // App will quit
+  
   startHeartbeat();
   
   // Start security monitoring
