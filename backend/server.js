@@ -844,7 +844,8 @@ app.post('/api/settings/logo', upload.single('logo'), async (req, res) => {
     console.log(`[Settings] Logo uploaded for user ${userId}`);
     res.json({ 
       success: true, 
-      message: 'Logo uploaded successfully'
+      message: 'Logo uploaded successfully',
+      logoUrl: `http://127.0.0.1:${PORT}/api/settings/${userId}/logo?t=${Date.now()}`
     });
   } catch (error) {
     console.error('[Settings] Logo upload error:', error);
@@ -871,6 +872,7 @@ app.get('/api/settings/:userId', async (req, res) => {
     try {
       await fs.access(settings.logoPath);
       settings.hasLogo = true;
+      settings.companyLogoUrl = `http://127.0.0.1:${PORT}/api/settings/${userId}/logo?t=${Date.now()}`;
     } catch {
       settings.hasLogo = false;
     }
