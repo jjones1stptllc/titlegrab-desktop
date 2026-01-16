@@ -3,7 +3,7 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, fork, execFile } = require('child_process');
 const Store = require('electron-store');
 
 const store = new Store();
@@ -38,6 +38,53 @@ function getBackendPath() {
   return path.join(process.resourcesPath, 'backend');
 }
 
+// Find Node.js executable on the system
+function findNodeExecutable() {
+  const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
+  
+  // Common Node.js locations
+  const nodePaths = isMac ? [
+    '/opt/homebrew/bin/node',      // Apple Silicon Homebrew
+    '/usr/local/bin/node',         // Intel Homebrew  
+    '/opt/local/bin/node',         // MacPorts
+    '/usr/bin/node',
+    process.env.HOME + '/.nvm/versions/node/*/bin/node', // NVM
+  ] : isWin ? [
+    'C:\\Program Files\\nodejs\\node.exe',
+    'C:\\Program Files (x86)\\nodejs\\node.exe',
+    process.env.LOCALAPPDATA + '\\Programs\\nodejs\\node.exe',
+    process.env.APPDATA + '\\nvm\\*\\node.exe', // NVM Windows
+  ] : ['/usr/bin/node', '/usr/local/bin/node'];
+  
+  // Check each path
+  for (const nodePath of nodePaths) {
+    // Handle glob patterns
+    if (nodePath.includes('*')) {
+      const baseDir = nodePath.split('*')[0];
+      if (fs.existsSync(baseDir)) {
+        try {
+          const dirs = fs.readdirSync(baseDir);
+          for (const dir of dirs) {
+            const fullPath = nodePath.replace('*', dir);
+            if (fs.existsSync(fullPath)) {
+              console.log('[Backend] Found Node at:', fullPath);
+              return fullPath;
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+    } else if (fs.existsSync(nodePath)) {
+      console.log('[Backend] Found Node at:', nodePath);
+      return nodePath;
+    }
+  }
+  
+  // Fall back to 'node' and hope it's in PATH
+  console.log('[Backend] Using PATH node');
+  return 'node';
+}
+
 async function startBackendServer() {
   return new Promise((resolve, reject) => {
     const backendPath = getBackendPath();
@@ -52,18 +99,18 @@ async function startBackendServer() {
       return;
     }
     
+    // Find Node executable
+    const nodeExe = findNodeExecutable();
+    console.log('[Backend] Using Node:', nodeExe);
+    
     // Set up environment with expanded PATH for Finder launches
-    const extraPaths = [
-      '/opt/homebrew/bin',      // Apple Silicon Homebrew
-      '/usr/local/bin',         // Intel Homebrew
-      '/opt/local/bin',         // MacPorts
-      '/usr/bin',
-      '/bin'
-    ].join(':');
+    const extraPaths = process.platform === 'darwin' 
+      ? ['/opt/homebrew/bin', '/usr/local/bin', '/opt/local/bin', '/usr/bin', '/bin'].join(':')
+      : '';
     
     const env = {
       ...process.env,
-      PATH: `${extraPaths}:${process.env.PATH || ''}`,
+      PATH: extraPaths ? `${extraPaths}:${process.env.PATH || ''}` : process.env.PATH,
       PORT: BACKEND_PORT.toString(),
       NODE_ENV: isDev ? 'development' : 'production',
       RESOURCES_PATH: app.isPackaged ? process.resourcesPath : __dirname
@@ -81,11 +128,15 @@ async function startBackendServer() {
       });
     }
     
-    backendProcess = spawn('node', [serverPath], {
+    // Use shell: true on Windows to find node in PATH
+    const spawnOptions = {
       cwd: backendPath,
       env,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32'
+    };
+    
+    backendProcess = spawn(nodeExe, [serverPath], spawnOptions);
     
     let started = false;
     
@@ -107,6 +158,14 @@ async function startBackendServer() {
     
     backendProcess.on('error', (err) => {
       console.error('[Backend] Failed to start:', err);
+      // Show helpful error for missing Node
+      if (err.code === 'ENOENT') {
+        dialog.showErrorBox(
+          'Node.js Required', 
+          'TitleGrab Pro requires Node.js to be installed.\n\n' +
+          'Please install Node.js from https://nodejs.org and restart the app.'
+        );
+      }
       reject(err);
     });
     

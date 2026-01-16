@@ -392,7 +392,17 @@ function App() {
       formData.append('metadata', JSON.stringify(metadata))
       console.log('Uploading file:', file.name, 'jobId:', jobId)
       
-      const response = await fetch(`${API_URL}/api/process-file`, { method: 'POST', body: formData })
+      // Add timeout to prevent hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 min timeout
+      
+      const response = await fetch(`${API_URL}/api/process-file`, { 
+        method: 'POST', 
+        body: formData,
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
+      
       const result = await response.json()
       console.log('Upload result:', result)
       
@@ -423,7 +433,10 @@ function App() {
     } catch (error) {
       console.error('Upload failed:', error)
       eventSource?.close()
-      setProcessingStatus(`❌ Upload failed: ${error.message}`)
+      const errorMsg = error.name === 'AbortError' 
+        ? 'Request timed out - backend may not be running'
+        : error.message || 'Upload failed'
+      setProcessingStatus(`❌ ${errorMsg}`)
       setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 5000)
     } finally {
       setIsCapturing(false)
@@ -731,7 +744,7 @@ function App() {
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 text-white py-2 rounded-md font-semibold flex items-center justify-center gap-2 transition-colors"
               >
                 {isGenerating ? Icons.loading : Icons.document}
-                {isGenerating ? 'Generating...' : 'Generate PDF'}
+                {isGenerating ? 'Generating...' : 'Generate Report'}
               </button>
             </div>
           </div>
