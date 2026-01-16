@@ -366,6 +366,16 @@ async function extractWithAI(text, jobId) {
     }]
   });
   
+  // Track API cost
+  if (message.usage) {
+    trackApiCost(
+      'anthropic-claude-3.5-sonnet',
+      'document-extraction',
+      message.usage.input_tokens,
+      message.usage.output_tokens
+    );
+  }
+  
   emitProgress(jobId, 'ai', 95, 'Parsing results...', null);
   
   const responseText = message.content[0].text;
@@ -716,6 +726,683 @@ app.get('/health', (req, res) => {
   });
 });
 
+
+// ============================================
+// USER SETTINGS & CUSTOMIZATION
+// ============================================
+
+// Storage for user settings (templates, logos, preferences)
+const userSettings = new Map();
+
+// API usage tracking
+const apiUsageLogs = [];
+
+// Middleware to track API costs
+function trackApiCost(service, operation, inputTokens = 0, outputTokens = 0, customCost = null) {
+  const costs = {
+    'anthropic-claude-3-haiku': { input: 0.00025 / 1000, output: 0.00125 / 1000 },
+    'anthropic-claude-3-sonnet': { input: 0.003 / 1000, output: 0.015 / 1000 },
+    'anthropic-claude-3.5-sonnet': { input: 0.003 / 1000, output: 0.015 / 1000 },
+    'supabase-auth': { perCall: 0.0 }, // Free tier
+    'supabase-storage': { perGB: 0.021 },
+    'tesseract-ocr': { perPage: 0.0 }, // Local, free
+  };
+
+  let cost = customCost;
+  if (!cost && costs[service]) {
+    if (costs[service].input) {
+      cost = (inputTokens * costs[service].input) + (outputTokens * costs[service].output);
+    } else if (costs[service].perCall) {
+      cost = costs[service].perCall;
+    }
+  }
+
+  const entry = {
+    id: uuidv4(),
+    timestamp: new Date().toISOString(),
+    service,
+    operation,
+    inputTokens,
+    outputTokens,
+    cost: cost || 0,
+    month: new Date().toISOString().slice(0, 7) // YYYY-MM
+  };
+
+  apiUsageLogs.push(entry);
+  console.log(`[Cost] ${service}/${operation}: $${(cost || 0).toFixed(6)}`);
+  return entry;
+}
+
+// Ensure directories exist
+async function ensureSettingsDirectories() {
+  const dirs = ['templates', 'logos'];
+  for (const dir of dirs) {
+    try {
+      await fs.mkdir(path.join(__dirname, dir), { recursive: true });
+    } catch (e) {}
+  }
+}
+ensureSettingsDirectories();
+
+// Upload report template (PDF that will be used as base)
+app.post('/api/settings/template', upload.single('template'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No template file provided' });
+    }
+
+    const userId = req.body.userId || 'default';
+    const templatePath = path.join(__dirname, 'templates', `${userId}-template.pdf`);
+    
+    // Move uploaded file to templates directory
+    await fs.rename(req.file.path, templatePath);
+    
+    // Update user settings
+    const settings = userSettings.get(userId) || {};
+    settings.templatePath = templatePath;
+    settings.templateName = req.body.templateName || req.file.originalname;
+    settings.templateUploadedAt = new Date().toISOString();
+    userSettings.set(userId, settings);
+
+    console.log(`[Settings] Template uploaded for user ${userId}`);
+    res.json({ 
+      success: true, 
+      templateName: settings.templateName,
+      message: 'Template uploaded successfully'
+    });
+  } catch (error) {
+    console.error('[Settings] Template upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload company logo
+app.post('/api/settings/logo', upload.single('logo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No logo file provided' });
+    }
+
+    const userId = req.body.userId || 'default';
+    const ext = path.extname(req.file.originalname) || '.png';
+    const logoPath = path.join(__dirname, 'logos', `${userId}-logo${ext}`);
+    
+    // Process and save logo (resize if needed)
+    await sharp(req.file.path)
+      .resize(300, 100, { fit: 'inside', withoutEnlargement: true })
+      .toFile(logoPath);
+    
+    // Remove temp file
+    await fs.unlink(req.file.path).catch(() => {});
+    
+    // Update user settings
+    const settings = userSettings.get(userId) || {};
+    settings.logoPath = logoPath;
+    settings.logoUploadedAt = new Date().toISOString();
+    userSettings.set(userId, settings);
+
+    console.log(`[Settings] Logo uploaded for user ${userId}`);
+    res.json({ 
+      success: true, 
+      message: 'Logo uploaded successfully'
+    });
+  } catch (error) {
+    console.error('[Settings] Logo upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user settings
+app.get('/api/settings/:userId', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const settings = userSettings.get(userId) || {};
+  
+  // Check if files exist
+  if (settings.templatePath) {
+    try {
+      await fs.access(settings.templatePath);
+      settings.hasTemplate = true;
+    } catch {
+      settings.hasTemplate = false;
+    }
+  }
+  
+  if (settings.logoPath) {
+    try {
+      await fs.access(settings.logoPath);
+      settings.hasLogo = true;
+    } catch {
+      settings.hasLogo = false;
+    }
+  }
+
+  // Verify templates array
+  if (settings.templates) {
+    for (const template of settings.templates) {
+      if (template.filePath) {
+        try {
+          await fs.access(template.filePath);
+          template.hasFile = true;
+        } catch {
+          template.hasFile = false;
+        }
+      }
+      if (template.logoPath) {
+        try {
+          await fs.access(template.logoPath);
+          template.hasLogo = true;
+        } catch {
+          template.hasLogo = false;
+        }
+      }
+    }
+  }
+  
+  res.json(settings);
+});
+
+// Update user settings (preferences)
+app.put('/api/settings/:userId', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const currentSettings = userSettings.get(userId) || {};
+  const newSettings = { ...currentSettings, ...req.body };
+  userSettings.set(userId, newSettings);
+  
+  console.log(`[Settings] Updated for user ${userId}`);
+  res.json({ success: true, settings: newSettings });
+});
+
+// Save field mappings for template
+app.put('/api/settings/:userId/field-mappings', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const { fieldMappings } = req.body;
+  const currentSettings = userSettings.get(userId) || {};
+  currentSettings.fieldMappings = fieldMappings;
+  userSettings.set(userId, currentSettings);
+  
+  console.log(`[Settings] Field mappings saved for user ${userId}:`, fieldMappings?.length || 0, 'fields');
+  res.json({ success: true });
+});
+
+// Get logo image for embedding
+app.get('/api/settings/:userId/logo', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const settings = userSettings.get(userId) || {};
+  
+  if (!settings.logoPath) {
+    return res.status(404).json({ error: 'No logo found' });
+  }
+  
+  try {
+    await fs.access(settings.logoPath);
+    res.sendFile(path.resolve(settings.logoPath));
+  } catch {
+    res.status(404).json({ error: 'Logo file not found' });
+  }
+});
+
+// Delete template
+app.delete('/api/settings/:userId/template', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const settings = userSettings.get(userId) || {};
+  
+  if (settings.templatePath) {
+    try {
+      await fs.unlink(settings.templatePath);
+    } catch {}
+    delete settings.templatePath;
+    delete settings.templateName;
+    delete settings.templateUploadedAt;
+    userSettings.set(userId, settings);
+  }
+  
+  res.json({ success: true });
+});
+
+// Delete logo
+app.delete('/api/settings/:userId/logo', async (req, res) => {
+  const userId = req.params.userId || 'default';
+  const settings = userSettings.get(userId) || {};
+  
+  if (settings.logoPath) {
+    try {
+      await fs.unlink(settings.logoPath);
+    } catch {}
+    delete settings.logoPath;
+    delete settings.logoUploadedAt;
+    userSettings.set(userId, settings);
+  }
+  
+  res.json({ success: true });
+});
+
+// ============================================
+// MULTI-TEMPLATE SUPPORT
+// ============================================
+
+// Create or update a template
+app.post('/api/templates', upload.fields([
+  { name: 'template', maxCount: 1 },
+  { name: 'logo', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const userId = req.body.userId || 'default';
+    const templateId = req.body.templateId || `tpl_${Date.now()}`;
+    const templateName = req.body.templateName || 'Untitled Template';
+    const fieldMappings = req.body.fieldMappings ? JSON.parse(req.body.fieldMappings) : [];
+
+    const settings = userSettings.get(userId) || {};
+    if (!settings.templates) settings.templates = [];
+
+    // Find existing template or create new
+    let template = settings.templates.find(t => t.id === templateId);
+    const isNew = !template;
+    
+    if (isNew) {
+      template = { id: templateId, createdAt: new Date().toISOString() };
+      settings.templates.push(template);
+    }
+
+    template.name = templateName;
+    template.fieldMappings = fieldMappings;
+    template.updatedAt = new Date().toISOString();
+
+    // Handle PDF upload
+    if (req.files?.template?.[0]) {
+      const file = req.files.template[0];
+      const templatePath = path.join(__dirname, 'templates', `${templateId}.pdf`);
+      await fs.rename(file.path, templatePath);
+      template.filePath = templatePath;
+      template.fileName = file.originalname;
+    }
+
+    // Handle logo upload
+    if (req.files?.logo?.[0]) {
+      const file = req.files.logo[0];
+      const ext = path.extname(file.originalname) || '.png';
+      const logoPath = path.join(__dirname, 'logos', `${templateId}${ext}`);
+      await fs.rename(file.path, logoPath);
+      template.logoPath = logoPath;
+      template.hasLogo = true;
+    }
+
+    userSettings.set(userId, settings);
+    console.log(`[Templates] ${isNew ? 'Created' : 'Updated'} template ${templateId} for user ${userId}`);
+    
+    res.json({ success: true, template });
+  } catch (error) {
+    console.error('[Templates] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get template logo
+app.get('/api/templates/:templateId/logo', async (req, res) => {
+  const templateId = req.params.templateId;
+  
+  // Find template across all users
+  for (const [userId, settings] of userSettings.entries()) {
+    const template = settings.templates?.find(t => t.id === templateId);
+    if (template?.logoPath) {
+      try {
+        await fs.access(template.logoPath);
+        return res.sendFile(path.resolve(template.logoPath));
+      } catch {}
+    }
+  }
+  
+  res.status(404).json({ error: 'Logo not found' });
+});
+
+// Delete template
+app.delete('/api/templates/:templateId', async (req, res) => {
+  try {
+    const templateId = req.params.templateId;
+    const userId = req.query.userId || 'default';
+    
+    const settings = userSettings.get(userId) || {};
+    const template = settings.templates?.find(t => t.id === templateId);
+    
+    if (template) {
+      // Delete files
+      if (template.filePath) {
+        try { await fs.unlink(template.filePath); } catch {}
+      }
+      if (template.logoPath) {
+        try { await fs.unlink(template.logoPath); } catch {}
+      }
+      
+      // Remove from array
+      settings.templates = settings.templates.filter(t => t.id !== templateId);
+      
+      // Clear default if it was this template
+      if (settings.defaultTemplateId === templateId) {
+        delete settings.defaultTemplateId;
+      }
+      
+      userSettings.set(userId, settings);
+      console.log(`[Templates] Deleted template ${templateId}`);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Templates] Delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// REPORT PREVIEW (HTML for editing before PDF)
+// ============================================
+
+// Generate HTML preview of report (for editing)
+app.post('/api/preview-report', async (req, res) => {
+  try {
+    const { data, metadata, userId } = req.body;
+    const settings = userSettings.get(userId || 'default') || {};
+    
+    // Get logo as base64 if exists
+    let logoBase64 = null;
+    if (settings.logoPath) {
+      try {
+        const logoBuffer = await fs.readFile(settings.logoPath);
+        const ext = path.extname(settings.logoPath).slice(1) || 'png';
+        logoBase64 = `data:image/${ext};base64,${logoBuffer.toString('base64')}`;
+      } catch {}
+    }
+
+    const html = generateReportHTML(data, metadata, logoBase64, settings);
+    res.json({ success: true, html, settings });
+  } catch (error) {
+    console.error('[Preview] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate HTML report string
+function generateReportHTML(data, metadata, logoBase64, settings) {
+  const formatDate = (d) => d || new Date().toLocaleDateString();
+  
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 10pt; padding: 0.5in; background: white; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .header-left { flex: 1; }
+    .header-right { text-align: right; }
+    .logo { max-height: 60px; max-width: 200px; }
+    .company-name { font-size: 14pt; font-weight: bold; margin-bottom: 5px; }
+    .report-title { font-size: 12pt; font-weight: bold; color: #333; }
+    .divider { border-top: 1px solid #999; margin: 10px 0; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 20px; margin-bottom: 15px; }
+    .info-row { display: flex; }
+    .info-label { font-weight: bold; min-width: 100px; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-size: 11pt; font-weight: bold; background: #f0f0f0; padding: 5px; margin-bottom: 10px; }
+    .item { border-bottom: 1px solid #ddd; padding: 8px 0; }
+    .item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 20px; }
+    .item-row { display: flex; }
+    .item-label { color: #666; min-width: 100px; }
+    .editable { border: 1px dashed transparent; padding: 2px; cursor: text; }
+    .editable:hover { border-color: #007bff; background: #f8f9fa; }
+    .editable:focus { outline: none; border-color: #007bff; background: #fff; }
+    @media print { .editable:hover { border-color: transparent; background: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      ${logoBase64 ? `<img src="${logoBase64}" class="logo" alt="Company Logo">` : ''}
+      <div class="company-name editable" contenteditable="true">${settings.companyName || 'WHOLESALE TITLE SOLUTIONS'}</div>
+      <div class="report-title">Current Owner Report</div>
+    </div>
+    <div class="header-right">
+      <div><span class="info-label">Order Date:</span> <span class="editable" contenteditable="true">${formatDate(metadata?.orderDate)}</span></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="info-grid">
+    <div class="info-row"><span class="info-label">Client:</span> <span class="editable" contenteditable="true">${metadata?.client || ''}</span></div>
+    <div class="info-row"><span class="info-label">Order Number:</span> <span class="editable" contenteditable="true">${metadata?.orderNumber || ''}</span></div>
+    <div class="info-row"><span class="info-label">Borrower:</span> <span class="editable" contenteditable="true">${metadata?.borrower || ''}</span></div>
+    <div class="info-row"><span class="info-label">County/City:</span> <span class="editable" contenteditable="true">${metadata?.countyCity || ''}</span></div>
+    <div class="info-row"><span class="info-label">Thru Date:</span> <span class="editable" contenteditable="true">${formatDate(metadata?.thruDate)}</span></div>
+  </div>
+
+  ${data.deeds?.length > 0 ? `
+  <div class="section">
+    <div class="section-title">DEED INFORMATION</div>
+    ${data.deeds.map(deed => `
+    <div class="item">
+      <div class="item-grid">
+        <div class="item-row"><span class="item-label">Grantor:</span> <span class="editable" contenteditable="true">${deed.grantor || ''}</span></div>
+        <div class="item-row"><span class="item-label">Consideration:</span> <span class="editable" contenteditable="true">${deed.consideration || ''}</span></div>
+        <div class="item-row"><span class="item-label">Grantee:</span> <span class="editable" contenteditable="true">${deed.grantee || ''}</span></div>
+        <div class="item-row"><span class="item-label">Note Date:</span> <span class="editable" contenteditable="true">${deed.noteDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">Recording Date:</span> <span class="editable" contenteditable="true">${deed.recordingDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">Book/Page:</span> <span class="editable" contenteditable="true">${deed.bookPage || ''}</span></div>
+        <div class="item-row"><span class="item-label">File Number:</span> <span class="editable" contenteditable="true">${deed.fileNumber || ''}</span></div>
+      </div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${data.deedsOfTrust?.length > 0 ? `
+  <div class="section">
+    <div class="section-title">DEED OF TRUST INFORMATION</div>
+    ${data.deedsOfTrust.map(dot => `
+    <div class="item">
+      <div class="item-grid">
+        <div class="item-row"><span class="item-label">Grantor:</span> <span class="editable" contenteditable="true">${dot.grantor || ''}</span></div>
+        <div class="item-row"><span class="item-label">Amount:</span> <span class="editable" contenteditable="true">${dot.amount || ''}</span></div>
+        <div class="item-row"><span class="item-label">Lender:</span> <span class="editable" contenteditable="true">${dot.lender || ''}</span></div>
+        <div class="item-row"><span class="item-label">Status:</span> <span class="editable" contenteditable="true">${dot.status || ''}</span></div>
+        <div class="item-row"><span class="item-label">Trustee:</span> <span class="editable" contenteditable="true">${dot.trustee || ''}</span></div>
+        <div class="item-row"><span class="item-label">Maturity:</span> <span class="editable" contenteditable="true">${dot.maturityDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">Note Date:</span> <span class="editable" contenteditable="true">${dot.noteDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">File Number:</span> <span class="editable" contenteditable="true">${dot.fileNumber || ''}</span></div>
+        <div class="item-row"><span class="item-label">Recording Date:</span> <span class="editable" contenteditable="true">${dot.recordingDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">Book/Pages:</span> <span class="editable" contenteditable="true">${dot.bookPages || ''}</span></div>
+      </div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${data.judgments?.length > 0 ? `
+  <div class="section">
+    <div class="section-title">JUDGMENT FINDINGS</div>
+    ${data.judgments.map(j => `
+    <div class="item">
+      <div class="item-grid">
+        <div class="item-row"><span class="item-label">Plaintiff:</span> <span class="editable" contenteditable="true">${j.plaintiff || ''}</span></div>
+        <div class="item-row"><span class="item-label">Amount:</span> <span class="editable" contenteditable="true">${j.amount || ''}</span></div>
+        <div class="item-row"><span class="item-label">Defendant:</span> <span class="editable" contenteditable="true">${j.defendant || ''}</span></div>
+        <div class="item-row"><span class="item-label">Judgment Date:</span> <span class="editable" contenteditable="true">${j.judgmentDate || ''}</span></div>
+        <div class="item-row"><span class="item-label">File Number:</span> <span class="editable" contenteditable="true">${j.fileNumber || ''}</span></div>
+        <div class="item-row"><span class="item-label">Book/Page:</span> <span class="editable" contenteditable="true">${j.bookPage || ''}</span></div>
+      </div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${data.liens?.length > 0 ? `
+  <div class="section">
+    <div class="section-title">LIEN FINDINGS</div>
+    ${data.liens.map(lien => `
+    <div class="item">
+      <div class="item-grid">
+        <div class="item-row"><span class="item-label">Type:</span> <span class="editable" contenteditable="true">${lien.type || ''}</span></div>
+        <div class="item-row"><span class="item-label">Amount:</span> <span class="editable" contenteditable="true">${lien.amount || ''}</span></div>
+        <div class="item-row"><span class="item-label">Creditor:</span> <span class="editable" contenteditable="true">${lien.creditor || ''}</span></div>
+        <div class="item-row"><span class="item-label">File Number:</span> <span class="editable" contenteditable="true">${lien.fileNumber || ''}</span></div>
+        <div class="item-row"><span class="item-label">Recording Date:</span> <span class="editable" contenteditable="true">${lien.recordingDate || ''}</span></div>
+      </div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${data.namesSearched?.length > 0 ? `
+  <div class="section">
+    <div class="section-title">NAMES SEARCHED</div>
+    <div class="editable" contenteditable="true">${data.namesSearched.join(', ')}</div>
+  </div>
+  ` : ''}
+
+</body>
+</html>`;
+}
+
+// Generate final PDF from edited HTML
+app.post('/api/generate-report-from-html', async (req, res) => {
+  const jobId = uuidv4();
+  
+  try {
+    const { html, metadata, userId } = req.body;
+    const settings = userSettings.get(userId || 'default') || {};
+    
+    console.log(`[Report ${jobId}] Generating from HTML...`);
+    
+    // For now, we'll use the existing PDF generation with the data
+    // In the future, we could use puppeteer to render HTML to PDF
+    const reportData = req.body.data || {};
+    const reportPath = await generateWTSReport(reportData, jobId, metadata);
+    
+    jobs.set(jobId, { reportPath });
+    
+    res.json({
+      success: true,
+      jobId,
+      reportUrl: `/api/reports/${jobId}`
+    });
+  } catch (error) {
+    console.error(`[Report ${jobId}] Error:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// ADMIN COST TRACKING
+// ============================================
+
+// Get cost summary
+app.get('/api/admin/costs', async (req, res) => {
+  try {
+    const { month, startDate, endDate } = req.query;
+    
+    let filteredLogs = [...apiUsageLogs];
+    
+    if (month) {
+      filteredLogs = filteredLogs.filter(log => log.month === month);
+    } else if (startDate && endDate) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.timestamp >= startDate && log.timestamp <= endDate
+      );
+    }
+    
+    // Group by service
+    const byService = {};
+    filteredLogs.forEach(log => {
+      if (!byService[log.service]) {
+        byService[log.service] = { calls: 0, cost: 0, inputTokens: 0, outputTokens: 0 };
+      }
+      byService[log.service].calls++;
+      byService[log.service].cost += log.cost;
+      byService[log.service].inputTokens += log.inputTokens;
+      byService[log.service].outputTokens += log.outputTokens;
+    });
+    
+    // Group by day
+    const byDay = {};
+    filteredLogs.forEach(log => {
+      const day = log.timestamp.slice(0, 10);
+      if (!byDay[day]) {
+        byDay[day] = { calls: 0, cost: 0 };
+      }
+      byDay[day].calls++;
+      byDay[day].cost += log.cost;
+    });
+    
+    // Calculate totals
+    const totalCost = filteredLogs.reduce((sum, log) => sum + log.cost, 0);
+    const totalCalls = filteredLogs.length;
+    
+    // Monthly fixed costs (estimates - you can adjust these)
+    const fixedCosts = {
+      'supabase-free-tier': 0,
+      'github-free-tier': 0,
+      'domain-annual': 12 / 12, // $12/year = $1/month
+    };
+    
+    const totalFixed = Object.values(fixedCosts).reduce((a, b) => a + b, 0);
+    
+    res.json({
+      summary: {
+        totalCost: totalCost.toFixed(4),
+        totalCalls,
+        totalFixed: totalFixed.toFixed(2),
+        grandTotal: (totalCost + totalFixed).toFixed(2),
+        period: month || `${startDate} to ${endDate}` || 'all time'
+      },
+      byService,
+      byDay: Object.entries(byDay).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)),
+      fixedCosts,
+      recentLogs: filteredLogs.slice(-50).reverse()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get available months
+app.get('/api/admin/costs/months', (req, res) => {
+  const months = [...new Set(apiUsageLogs.map(log => log.month))].sort().reverse();
+  res.json(months);
+});
+
+// Add manual cost entry (for tracking external costs like domain, etc)
+app.post('/api/admin/costs/manual', (req, res) => {
+  const { service, description, cost, date } = req.body;
+  
+  const entry = {
+    id: uuidv4(),
+    timestamp: date || new Date().toISOString(),
+    service: service || 'manual-entry',
+    operation: description || 'Manual cost entry',
+    inputTokens: 0,
+    outputTokens: 0,
+    cost: parseFloat(cost) || 0,
+    month: (date || new Date().toISOString()).slice(0, 7)
+  };
+  
+  apiUsageLogs.push(entry);
+  res.json({ success: true, entry });
+});
+
+// Export cost data
+app.get('/api/admin/costs/export', (req, res) => {
+  const { format } = req.query;
+  
+  if (format === 'csv') {
+    const headers = 'Date,Service,Operation,Input Tokens,Output Tokens,Cost\n';
+    const rows = apiUsageLogs.map(log => 
+      `${log.timestamp},${log.service},${log.operation},${log.inputTokens},${log.outputTokens},${log.cost.toFixed(6)}`
+    ).join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=titlegrab-costs.csv');
+    res.send(headers + rows);
+  } else {
+    res.json(apiUsageLogs);
+  }
+});
 
 // ============================================
 // USER AUTHENTICATION (Supabase)

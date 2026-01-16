@@ -1388,7 +1388,7 @@ function setupAutoUpdater() {
   // Configure for private GitHub repo (token allows reading releases)
   // Generate a fine-grained token at: https://github.com/settings/tokens?type=beta
   // Permissions needed: Contents (read-only) for the titlegrab-desktop repo only
-  const GITHUB_TOKEN = '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3';
+  const GITHUB_TOKEN = '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';
   autoUpdater.setFeedURL({
     provider: 'github',
     owner: 'jjones1stptllc',
