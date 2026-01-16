@@ -3,7 +3,7 @@ import Settings from './Settings'
 import AdminPanel from './AdminPanel'
 import ReportPreview from './ReportPreview'
 
-const API_URL = 'http://127.0.0.1:3000'
+const API_URL = 'http://147.93.185.218'
 
 // Professional SVG Icons
 const Icons = {

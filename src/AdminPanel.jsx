@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const API_URL = 'http://127.0.0.1:3000'
+const API_URL = 'http://147.93.185.218'
 
 export default function AdminPanel() {
   const [costData, setCostData] = useState(null)

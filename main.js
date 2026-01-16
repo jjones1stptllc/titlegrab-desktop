@@ -1444,15 +1444,10 @@ function setupAutoUpdater() {
   autoUpdater.logger = require('electron-log');
   autoUpdater.logger.transports.file.level = 'info';
 
-  // Configure for private GitHub repo with classic token
-  // Token split to avoid GitHub push protection blocking
-  const _t = ['ghp_', 'iobjGPWOrV6ATT', 'Gcy0teKtNRY9JX', 'UH1emnm8'].join('');
+  // Configure for self-hosted update server
   autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'jjones1stptllc',
-    repo: 'titlegrab-desktop',
-    private: true,
-    token: _t
+    provider: 'generic',
+    url: 'http://147.93.185.218/updates'
   });
 
   // DON'T auto-download - we want to ask user first

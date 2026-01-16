@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const API_URL = 'http://154.38.176.77:3000'
+const API_URL = 'http://147.93.185.218'
 
 export default function UserManagement({ onClose }) {
   const [users, setUsers] = useState([])
