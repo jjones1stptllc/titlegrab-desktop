@@ -279,114 +279,122 @@ async function performOCR(imagePath, jobId = null, pageNum = null, totalPages = 
 }
 
 // ============================================
-// AI EXTRACTION
+// AI EXTRACTION - OPTIMIZED WITH HAIKU + CACHING
 // ============================================
 
-const EXTRACTION_PROMPT = `You are a title search document analyst. Extract all property record information from this text.
+// System prompt (cached for 90% cost savings on subsequent calls)
+const EXTRACTION_SYSTEM_PROMPT = `You are an expert title search document analyst. Extract property records with 100% accuracy.
 
-Return ONLY valid JSON with this structure:
+OUTPUT FORMAT: Return ONLY valid JSON. No explanation, no markdown, no code blocks.
+
+SCHEMA:
 {
-  "deeds": [
-    {
-      "grantor": "Name transferring property",
-      "grantee": "Name receiving property", 
-      "consideration": "Dollar amount",
-      "noteDate": "Date on deed",
-      "fileNumber": "Document number",
-      "recordingDate": "Recording date",
-      "bookPage": "Book/Page reference"
-    }
-  ],
-  "deedsOfTrust": [
-    {
-      "grantor": "Borrower name",
-      "amount": "Loan amount",
-      "lender": "Lending institution",
-      "status": "Open/Released",
-      "trustee": "Trustee name",
-      "maturityDate": "Maturity date",
-      "noteDate": "Note date",
-      "fileNumber": "Document number",
-      "recordingDate": "Recording date",
-      "bookPages": "Book/Page"
-    }
-  ],
-  "judgments": [
-    {
-      "plaintiff": "Creditor",
-      "defendant": "Debtor",
-      "amount": "Amount",
-      "judgmentDate": "Date",
-      "fileNumber": "File number",
-      "recordingDate": "Recording date",
-      "bookPage": "Book/Page"
-    }
-  ],
-  "liens": [
-    {
-      "type": "Type of lien",
-      "creditor": "Lien holder",
-      "amount": "Amount",
-      "fileNumber": "Document number",
-      "recordingDate": "Recording date"
-    }
-  ],
-  "namesSearched": ["All names found"],
-  "propertyInfo": {
-    "address": "Property address",
-    "parcelNumber": "Parcel/Tax ID",
-    "legalDescription": "Legal description"
-  }
+  "confidence": "high|medium|low",
+  "deeds": [{"grantor":"","grantee":"","consideration":"","noteDate":"","fileNumber":"","recordingDate":"","bookPage":""}],
+  "deedsOfTrust": [{"grantor":"","amount":"","lender":"","status":"Open|Released","trustee":"","maturityDate":"","noteDate":"","fileNumber":"","recordingDate":"","bookPages":""}],
+  "judgments": [{"plaintiff":"","defendant":"","amount":"","judgmentDate":"","fileNumber":"","recordingDate":"","bookPage":""}],
+  "liens": [{"type":"","creditor":"","amount":"","fileNumber":"","recordingDate":""}],
+  "namesSearched": [],
+  "propertyInfo": {"address":"","parcelNumber":"","legalDescription":""}
 }
 
-Extract ALL records found. Use empty string "" for missing fields.
+RULES:
+- Extract EVERY record found, even partial
+- Use "" for missing fields, never null or undefined
+- confidence: "high" if text is clear, "medium" if some fields unclear, "low" if document is poor quality
+- Dates: preserve original format from document
+- Amounts: include $ symbol if present
+- Status: "Open" unless explicitly released/satisfied
 
-TEXT TO ANALYZE:
-`;
+EXAMPLE INPUT:
+"Deed Book 123 Page 456 recorded 01/15/2024. John Smith and Mary Smith, husband and wife, grantor, convey to ABC Holdings LLC for $250,000..."
 
-async function extractWithAI(text, jobId) {
+EXAMPLE OUTPUT:
+{"confidence":"high","deeds":[{"grantor":"John Smith and Mary Smith","grantee":"ABC Holdings LLC","consideration":"$250,000","noteDate":"","fileNumber":"","recordingDate":"01/15/2024","bookPage":"Book 123 Page 456"}],"deedsOfTrust":[],"judgments":[],"liens":[],"namesSearched":["John Smith","Mary Smith","ABC Holdings LLC"],"propertyInfo":{"address":"","parcelNumber":"","legalDescription":""}}`;
+
+// Models configuration
+const AI_MODELS = {
+  fast: 'claude-3-5-haiku-20241022',
+  accurate: 'claude-sonnet-4-20250514'
+};
+
+async function extractWithAI(text, jobId, forceAccurate = false) {
   console.log(`[AI] Extracting from ${text.length} chars...`);
   emitProgress(jobId, 'ai', 80, 'Analyzing document with AI...', { chars: text.length });
   
-  // Truncate if too long (context limit)
+  // Truncate if too long
   const maxChars = 180000;
   if (text.length > maxChars) {
     text = text.substring(0, maxChars);
     console.log(`[AI] Truncated to ${maxChars} chars`);
   }
   
-  emitProgress(jobId, 'ai', 85, 'Extracting deeds, liens & judgments...', null);
+  // First pass: Use Haiku (fast + cheap)
+  const model = forceAccurate ? AI_MODELS.accurate : AI_MODELS.fast;
+  console.log(`[AI] Using model: ${model}`);
+  emitProgress(jobId, 'ai', 85, `Extracting with ${forceAccurate ? 'high-accuracy' : 'fast'} AI...`, null);
+  
+  const startTime = Date.now();
   
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: model,
     max_tokens: 8000,
+    system: [
+      {
+        type: 'text',
+        text: EXTRACTION_SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' } // Enable prompt caching
+      }
+    ],
     messages: [{
       role: 'user',
-      content: EXTRACTION_PROMPT + text
+      content: `Extract all property records from this document:\n\n${text}`
     }]
   });
   
-  // Track API cost
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`[AI] Response received in ${elapsed}s`);
+  
+  // Track API cost with correct model name
   if (message.usage) {
+    const costModel = model.includes('haiku') ? 'anthropic-claude-3-haiku' : 'anthropic-claude-3.5-sonnet';
     trackApiCost(
-      'anthropic-claude-3.5-sonnet',
+      costModel,
       'document-extraction',
       message.usage.input_tokens,
       message.usage.output_tokens
     );
+    
+    // Log cache performance
+    if (message.usage.cache_creation_input_tokens) {
+      console.log(`[AI] Cache created: ${message.usage.cache_creation_input_tokens} tokens`);
+    }
+    if (message.usage.cache_read_input_tokens) {
+      console.log(`[AI] Cache hit: ${message.usage.cache_read_input_tokens} tokens (90% savings)`);
+    }
   }
   
-  emitProgress(jobId, 'ai', 95, 'Parsing results...', null);
+  emitProgress(jobId, 'ai', 92, 'Parsing results...', null);
   
   const responseText = message.content[0].text;
   
   // Extract JSON
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    const extracted = JSON.parse(jsonMatch[0]);
-    console.log(`[AI] Found: ${extracted.deeds?.length || 0} deeds, ${extracted.deedsOfTrust?.length || 0} DOTs`);
-    return extracted;
+  if (!jsonMatch) {
+    throw new Error('No valid JSON in AI response');
   }
+  
+  const extracted = JSON.parse(jsonMatch[0]);
+  console.log(`[AI] Found: ${extracted.deeds?.length || 0} deeds, ${extracted.deedsOfTrust?.length || 0} DOTs, confidence: ${extracted.confidence}`);
+  
+  // Auto-fallback to Sonnet if Haiku reports low confidence
+  if (extracted.confidence === 'low' && !forceAccurate) {
+    console.log(`[AI] Low confidence detected, retrying with Sonnet for accuracy...`);
+    emitProgress(jobId, 'ai', 94, 'Verifying with high-accuracy AI...', null);
+    return extractWithAI(text, jobId, true);
+  }
+  
+  return extracted;
   
   throw new Error('No valid JSON in AI response');
 }
