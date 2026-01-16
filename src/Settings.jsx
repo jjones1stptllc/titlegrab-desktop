@@ -57,6 +57,7 @@ export default function Settings({ userId = 'default' }) {
     setTemplateForm({ name: '', file: null, logo: null, fieldMappings: [] })
     setEditorStep(1)
     setShowTemplateModal(true)
+    window.electronAPI?.hideBrowser()
   }
 
   const openEditTemplate = (template) => {
@@ -69,6 +70,12 @@ export default function Settings({ userId = 'default' }) {
     })
     setEditorStep(2) // Go straight to field mapping for existing templates
     setShowTemplateModal(true)
+    window.electronAPI?.hideBrowser()
+  }
+
+  const closeTemplateModal = () => {
+    setShowTemplateModal(false)
+    window.electronAPI?.showBrowser()
   }
 
   const handleTemplateFileSelect = (e) => {
@@ -156,7 +163,7 @@ export default function Settings({ userId = 'default' }) {
       
       if (data.success) {
         showMessage('success', editingTemplate ? 'Template updated!' : 'Template created!')
-        setShowTemplateModal(false)
+        closeTemplateModal()
         loadSettings()
       } else {
         showMessage('error', data.error || 'Failed to save template')
@@ -426,20 +433,20 @@ export default function Settings({ userId = 'default' }) {
 
       {/* Template Editor Modal - using Portal to escape container constraints */}
       {showTemplateModal && createPortal(
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col mx-4">
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:99999}}>
+          <div style={{backgroundColor:'white',borderRadius:'12px',width:'90%',maxWidth:'800px',maxHeight:'90vh',display:'flex',flexDirection:'column',margin:'16px'}}>
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #e2e8f0'}}>
               <div>
-                <h3 className="text-lg font-bold text-slate-800">
+                <h3 style={{fontSize:'18px',fontWeight:'bold',color:'#1e293b',margin:0}}>
                   {editingTemplate ? 'Edit Template' : 'New Template'}
                 </h3>
-                <p className="text-sm text-slate-500">
+                <p style={{fontSize:'14px',color:'#64748b',margin:'4px 0 0 0'}}>
                   Step {editorStep} of 2: {editorStep === 1 ? 'Basic Info' : 'Field Mapping'}
                 </p>
               </div>
-              <button onClick={() => setShowTemplateModal(false)} className="text-slate-400 hover:text-slate-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button onClick={closeTemplateModal} style={{background:'none',border:'none',cursor:'pointer',padding:'8px',color:'#94a3b8'}}>
+                <svg style={{width:'24px',height:'24px'}} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -447,65 +454,54 @@ export default function Settings({ userId = 'default' }) {
 
             {/* Step 1: Basic Info */}
             {editorStep === 1 && (
-              <div className="p-6 overflow-y-auto">
-                <div className="space-y-4">
+              <div style={{padding:'24px',overflowY:'auto',flex:1}}>
+                <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Template Name *</label>
+                    <label style={{display:'block',fontSize:'14px',fontWeight:'500',color:'#334155',marginBottom:'4px'}}>Template Name *</label>
                     <input
                       type="text"
                       value={templateForm.name}
                       onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
                       placeholder="e.g., Full Title Search, Current Owner Search"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      style={{width:'100%',padding:'8px 12px',border:'1px solid #cbd5e1',borderRadius:'8px',fontSize:'14px',boxSizing:'border-box'}}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">PDF Template *</label>
+                    <label style={{display:'block',fontSize:'14px',fontWeight:'500',color:'#334155',marginBottom:'4px'}}>PDF Template *</label>
                     <div 
                       onClick={() => templateFileRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50"
+                      style={{border:'2px dashed #cbd5e1',borderRadius:'8px',padding:'24px',textAlign:'center',cursor:'pointer',backgroundColor:'#f8fafc'}}
                     >
                       {templateForm.file ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <svg className="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/>
-                          </svg>
-                          <span className="text-slate-700">{templateForm.file.name}</span>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+                          <span style={{color:'#334155'}}>{templateForm.file.name}</span>
                         </div>
                       ) : editingTemplate ? (
-                        <p className="text-slate-600">Current template: <strong>{editingTemplate.fileName}</strong><br/>
-                        <span className="text-sm text-slate-400">Click to replace</span></p>
+                        <p style={{color:'#475569',margin:0}}>Current: <strong>{editingTemplate.fileName}</strong><br/>
+                        <span style={{fontSize:'12px',color:'#94a3b8'}}>Click to replace</span></p>
                       ) : (
-                        <>
-                          <svg className="w-10 h-10 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          <p className="text-slate-600">Click to upload PDF template</p>
-                        </>
+                        <p style={{color:'#475569',margin:0}}>Click to upload PDF template</p>
                       )}
                     </div>
-                    <input ref={templateFileRef} type="file" accept=".pdf" onChange={handleTemplateFileSelect} className="hidden" />
+                    <input ref={templateFileRef} type="file" accept=".pdf" onChange={handleTemplateFileSelect} style={{display:'none'}} />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Logo (Optional)</label>
+                    <label style={{display:'block',fontSize:'14px',fontWeight:'500',color:'#334155',marginBottom:'4px'}}>Logo (Optional - PNG, JPG)</label>
                     <div 
                       onClick={() => templateLogoRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50"
+                      style={{border:'2px dashed #cbd5e1',borderRadius:'8px',padding:'16px',textAlign:'center',cursor:'pointer',backgroundColor:'#f8fafc'}}
                     >
                       {templateForm.logo ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <img src={URL.createObjectURL(templateForm.logo)} alt="Logo" className="h-10 object-contain" />
-                          <span className="text-slate-600">{templateForm.logo.name}</span>
-                        </div>
+                        <span style={{color:'#475569'}}>{templateForm.logo.name}</span>
                       ) : editingTemplate?.hasLogo ? (
-                        <p className="text-slate-600">Logo uploaded ✓ <span className="text-sm text-slate-400">(click to replace)</span></p>
+                        <p style={{color:'#475569',margin:0}}>Logo uploaded ✓</p>
                       ) : (
-                        <p className="text-slate-500 text-sm">Click to upload logo (PNG, JPG)</p>
+                        <p style={{color:'#64748b',margin:0,fontSize:'14px'}}>Click to upload logo</p>
                       )}
                     </div>
-                    <input ref={templateLogoRef} type="file" accept="image/*" onChange={handleLogoSelect} className="hidden" />
+                    <input ref={templateLogoRef} type="file" accept="image/*" onChange={handleLogoSelect} style={{display:'none'}} />
                   </div>
                 </div>
               </div>
@@ -600,29 +596,29 @@ export default function Settings({ userId = 'default' }) {
             )}
 
             {/* Footer */}
-            <div className="flex justify-between p-4 border-t bg-slate-50">
+            <div style={{display:'flex',justifyContent:'space-between',padding:'16px',borderTop:'1px solid #e2e8f0',backgroundColor:'#f8fafc'}}>
               <div>
                 {editorStep === 2 && (
-                  <button onClick={() => setEditorStep(1)} className="px-4 py-2 text-slate-600 hover:text-slate-800">
+                  <button onClick={() => setEditorStep(1)} style={{padding:'8px 16px',color:'#475569',background:'none',border:'none',cursor:'pointer',fontSize:'14px'}}>
                     ← Back
                   </button>
                 )}
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => setShowTemplateModal(false)} className="px-4 py-2 text-slate-600 hover:text-slate-800">
+              <div style={{display:'flex',gap:'12px'}}>
+                <button onClick={closeTemplateModal} style={{padding:'8px 16px',color:'#475569',background:'none',border:'none',cursor:'pointer',fontSize:'14px'}}>
                   Cancel
                 </button>
                 {editorStep === 1 ? (
                   <button
                     onClick={() => setEditorStep(2)}
                     disabled={!templateForm.name || (!editingTemplate && !templateForm.file)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300"
+                    style={{padding:'8px 16px',backgroundColor:(!templateForm.name || (!editingTemplate && !templateForm.file))?'#cbd5e1':'#2563eb',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'14px'}}
                   >
                     Next: Field Mapping →
                   </button>
                 ) : (
                   <button onClick={handleSaveTemplate} disabled={saving}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-400">
+                    style={{padding:'8px 16px',backgroundColor:saving?'#86efac':'#16a34a',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'14px'}}>
                     {saving ? 'Saving...' : 'Save Template'}
                   </button>
                 )}
