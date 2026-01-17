@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import Settings from './Settings'
 import AdminPanel from './AdminPanel'
 import ReportPreview from './ReportPreview'
+import PunchTheManager from './PunchTheManager'
+import { formatDateEST, formatTimestampEST, formatTimeEST, getCurrentDateEST, getISOTimestamp } from './timeUtils'
 
-const API_URL = 'http://147.93.185.218'
+const API_URL = 'http://23.31.100.76'
 
 // Professional SVG Icons
 const Icons = {
@@ -99,7 +101,7 @@ function App() {
     orderNumber: '',
     countyCity: '',
     borrower: '',
-    thruDate: new Date().toLocaleDateString()
+    thruDate: getCurrentDateEST()
   })
 
   const [captures, setCaptures] = useState([])
@@ -121,6 +123,12 @@ function App() {
   const [browserHidden, setBrowserHidden] = useState(false)
   const [userStatus, setUserStatus] = useState('connecting') // 'active', 'pending', 'blocked', 'offline', 'connecting'
   const [showPreview, setShowPreview] = useState(false)
+  
+  // Auto-update state
+  const [updateProgress, setUpdateProgress] = useState(0)
+  const [updateStatus, setUpdateStatus] = useState('') // 'checking', 'available', 'downloading', 'downloaded', 'error'
+  const [updateVersion, setUpdateVersion] = useState('')
+  const [isUpdating, setIsUpdating] = useState(false)
 
 
   useEffect(() => {
@@ -131,6 +139,29 @@ function App() {
       })
       window.electronAPI.onTitleChanged((title) => setPageTitle(title))
       window.electronAPI.onLoadingChanged((loading) => setIsLoading(loading))
+      
+      // Auto-update listeners
+      window.electronAPI.onUpdateProgress?.((data) => {
+        console.log('[Update] Progress:', data)
+        setUpdateProgress(data.percent || 0)
+        setIsUpdating(true)
+        setUpdateStatus('downloading')
+        window.electronAPI?.hideBrowser() // Hide browser during update
+      })
+      
+      window.electronAPI.onUpdateAvailable?.((info) => {
+        console.log('[Update] Available:', info)
+        setUpdateVersion(info?.version || '')
+        setUpdateStatus('available')
+      })
+      
+      window.electronAPI.onUpdateDownloaded?.((info) => {
+        console.log('[Update] Downloaded:', info)
+        setUpdateStatus('downloaded')
+        setIsUpdating(false)
+        window.electronAPI?.showBrowser() // Show browser after update
+      })
+      
       loadSession()
       checkRegistration()
     }
@@ -258,7 +289,7 @@ function App() {
         const data = result.extractedData
         setCaptures(prev => [...prev, {
           id: Date.now(), url: result.url, title: result.title,
-          timestamp: new Date().toISOString(), data: data
+          timestamp: getISOTimestamp(), data: data
         }])
         setExtractedData(prev => ({
           deeds: [...prev.deeds, ...(data.deeds || [])],
@@ -269,15 +300,15 @@ function App() {
           propertyInfo: data.propertyInfo || prev.propertyInfo
         }))
         setProcessingProgress(100)
-        setProcessingStatus(`✅ Captured: ${data.deeds?.length || 0} deeds, ${data.deedsOfTrust?.length || 0} DOTs`)
+        setProcessingStatus(`Captured: ${data.deeds?.length || 0} deeds, ${data.deedsOfTrust?.length || 0} DOTs`)
         setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 3000)
       } else {
-        setProcessingStatus(`❌ Capture failed: ${result.error || 'No data extracted'}`)
+        setProcessingStatus(`Capture failed: ${result.error || 'No data extracted'}`)
         setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 5000)
       }
     } catch (error) {
       console.error('Capture failed:', error)
-      setProcessingStatus(`❌ Capture error: ${error.message}`)
+      setProcessingStatus(`Capture error: ${error.message}`)
       setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 5000)
     } finally {
       setIsCapturing(false)
@@ -296,7 +327,7 @@ function App() {
         const recentEntry = {
           id: Date.now(),
           address: extractedData.propertyInfo?.address || metadata.client || 'Unknown Property',
-          generatedAt: new Date().toISOString(),
+          generatedAt: getISOTimestamp(),
           metadata: { ...metadata },
           extractedData: { ...extractedData },
           captures: [...captures]
@@ -304,7 +335,7 @@ function App() {
         setRecentSearches(prev => [recentEntry, ...prev].slice(0, 50)) // Keep last 50
         
         // Clear current session
-        setMetadata({ client: '', orderNumber: '', countyCity: '', borrower: '', thruDate: new Date().toLocaleDateString() })
+        setMetadata({ client: '', orderNumber: '', countyCity: '', borrower: '', thruDate: getCurrentDateEST() })
         setExtractedData({ deeds: [], deedsOfTrust: [], judgments: [], liens: [], namesSearched: [], propertyInfo: { address: '', parcelNumber: '', legalDescription: '' } })
         setCaptures([])
         
@@ -324,7 +355,7 @@ function App() {
 
   const handleNewSession = () => {
     if (confirm('Start a new session? This will clear all captured data.')) {
-      setMetadata({ client: '', orderNumber: '', countyCity: '', borrower: '', thruDate: new Date().toLocaleDateString() })
+      setMetadata({ client: '', orderNumber: '', countyCity: '', borrower: '', thruDate: getCurrentDateEST() })
       setExtractedData({ deeds: [], deedsOfTrust: [], judgments: [], liens: [], namesSearched: [], propertyInfo: { address: '', parcelNumber: '', legalDescription: '' } })
       setCaptures([])
       setActiveTab('builder')
@@ -345,75 +376,77 @@ function App() {
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+    
+    console.log('[Upload] Starting upload for:', file.name, 'size:', file.size)
     setIsCapturing(true)
     setBrowserHidden(true)
     setProcessingProgress(5)
     window.electronAPI?.hideBrowser()
     setProcessingStatus(`Uploading ${file.name}...`)
     
-    // Generate job ID for progress tracking
-    const jobId = crypto.randomUUID()
-    let eventSource = null
+    // Set up progress listener
+    window.electronAPI?.onUploadProgress?.((data) => {
+      console.log('[Progress]', data.stage, data.message, Math.round(data.progress * 100) + '%')
+      // Map server progress (0-100) to UI progress (20-95)
+      const uiProgress = 20 + Math.round(data.progress * 0.75)
+      setProcessingProgress(uiProgress)
+      
+      // Show detailed status based on stage
+      switch (data.stage) {
+        case 'upload':
+          setProcessingStatus(data.message || 'Uploading...')
+          break
+        case 'processing':
+          setProcessingStatus(data.message || 'Processing...')
+          break
+        case 'pdf':
+          setProcessingStatus(data.message || 'Reading PDF...')
+          break
+        case 'ocr':
+          if (data.detail?.currentPage && data.detail?.totalPages) {
+            setProcessingStatus(`OCR Processing — Page ${data.detail.currentPage} of ${data.detail.totalPages}`)
+          } else {
+            setProcessingStatus(data.message || 'Running OCR...')
+          }
+          break
+        case 'ai':
+          setProcessingStatus(data.message || 'Analyzing Document...')
+          break
+        case 'complete':
+          setProcessingStatus(data.message || 'Complete')
+          break
+        case 'error':
+          setProcessingStatus(data.message || 'Error')
+          break
+        default:
+          if (data.message) setProcessingStatus(data.message)
+      }
+    })
     
     try {
-      // Connect to SSE for progress updates FIRST
-      eventSource = new EventSource(`${API_URL}/api/progress/${jobId}`)
+      setProcessingProgress(10)
+      setProcessingStatus(`Reading ${file.name}...`)
       
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          console.log('[Progress]', data)
-          
-          // Update progress bar and status
-          if (data.progress !== undefined) {
-            setProcessingProgress(data.progress)
-          }
-          if (data.message) {
-            setProcessingStatus(data.message)
-          }
-          
-          // Add page info if available
-          if (data.detail?.currentPage && data.detail?.totalPages) {
-            setProcessingStatus(`${data.message} (${data.detail.currentPage}/${data.detail.totalPages})`)
-          }
-        } catch (err) {
-          console.error('[Progress] Parse error:', err)
-        }
-      }
+      // Read file as ArrayBuffer to send via IPC
+      const arrayBuffer = await file.arrayBuffer()
+      const fileData = Array.from(new Uint8Array(arrayBuffer))
       
-      eventSource.onerror = (err) => {
-        console.error('[Progress] SSE error:', err)
-      }
+      setProcessingProgress(15)
+      setProcessingStatus(`Sending to server...`)
       
-      // Now upload the file with the jobId
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('jobId', jobId)
-      formData.append('metadata', JSON.stringify(metadata))
-      console.log('Uploading file:', file.name, 'jobId:', jobId)
+      // Use IPC to upload (bypasses browser security)
+      const result = await window.electronAPI.uploadFileToServer(fileData, file.name, metadata)
       
-      // Add timeout to prevent hanging
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 min timeout
+      // Clean up progress listener
+      window.electronAPI?.removeUploadProgressListener?.()
       
-      const response = await fetch(`${API_URL}/api/process-file`, { 
-        method: 'POST', 
-        body: formData,
-        signal: controller.signal
-      })
-      clearTimeout(timeoutId)
-      
-      const result = await response.json()
       console.log('Upload result:', result)
-      
-      // Close SSE connection
-      eventSource?.close()
       
       if (result.success && result.extractedData) {
         const data = result.extractedData
         setCaptures(prev => [...prev, {
           id: Date.now(), url: `file://${file.name}`, title: file.name,
-          timestamp: new Date().toISOString(), data: data
+          timestamp: getISOTimestamp(), data: data
         }])
         setExtractedData(prev => ({
           deeds: [...prev.deeds, ...(data.deeds || [])],
@@ -424,19 +457,21 @@ function App() {
           propertyInfo: data.propertyInfo || prev.propertyInfo
         }))
         setProcessingProgress(100)
-        setProcessingStatus(`✅ Extracted: ${data.deeds?.length || 0} deeds, ${data.deedsOfTrust?.length || 0} DOTs, ${data.judgments?.length || 0} judgments`)
+        setProcessingStatus(`Extracted: ${data.deeds?.length || 0} deeds, ${data.deedsOfTrust?.length || 0} DOTs, ${data.judgments?.length || 0} judgments`)
         setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 3000)
       } else {
-        setProcessingStatus(`❌ Error: ${result.error || 'Unknown error'}`)
+        setProcessingStatus(`Error: ${result.error || 'Unknown error'}`)
         setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 5000)
       }
     } catch (error) {
+      // Clean up progress listener
+      window.electronAPI?.removeUploadProgressListener?.()
+      
       console.error('Upload failed:', error)
-      eventSource?.close()
       const errorMsg = error.name === 'AbortError' 
         ? 'Request timed out - backend may not be running'
         : error.message || 'Upload failed'
-      setProcessingStatus(`❌ ${errorMsg}`)
+      setProcessingStatus(errorMsg)
       setTimeout(() => { setProcessingStatus(''); setProcessingProgress(0) }, 5000)
     } finally {
       setIsCapturing(false)
@@ -457,6 +492,40 @@ function App() {
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-white text-lg">Loading TitleGrab Pro...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Update Progress Overlay */}
+      {isUpdating && (
+        <div className="fixed inset-0 bg-slate-900/95 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-blue-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-slate-800">Downloading Update</h2>
+              <p className="text-slate-500 mt-1">{updateVersion ? `Version ${updateVersion}` : 'Please wait...'}</p>
+            </div>
+            
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-slate-600 mb-2">
+                <span>Progress</span>
+                <span>{Math.round(updateProgress)}%</span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-3">
+                <div 
+                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${updateProgress}%` }}
+                ></div>
+              </div>
+            </div>
+            
+            <p className="text-center text-sm text-slate-500">
+              The app will restart automatically when complete
+            </p>
           </div>
         </div>
       )}
@@ -600,17 +669,13 @@ function App() {
         {/* Left: Browser placeholder */}
         <div className="w-[55%] bg-slate-200 relative">
           {/* BrowserView renders here via Electron */}
-          {/* Processing overlay when browser is hidden */}
+          {/* Processing overlay with Punch the Manager game */}
           {browserHidden && (
-            <div className="absolute inset-0 bg-slate-700 flex flex-col items-center justify-center z-50">
-              <div className="w-16 h-16 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-6"></div>
-              <h3 className="text-white text-xl font-semibold mb-2">Processing...</h3>
-              <p className="text-slate-300 text-center px-8">{processingStatus || 'Please wait...'}</p>
-              <div className="mt-6 w-64 h-3 bg-slate-600 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out" style={{width: `${processingProgress}%`}}></div>
-              </div>
-              <p className="text-slate-400 text-sm mt-2">{processingProgress}%</p>
-            </div>
+            <PunchTheManager 
+              isVisible={browserHidden}
+              processingProgress={processingProgress}
+              processingStatus={processingStatus}
+            />
           )}
         </div>
 
@@ -768,7 +833,7 @@ function App() {
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-slate-800 truncate">{recent.address}</h3>
                         <p className="text-xs text-slate-500 mt-1">
-                          {new Date(recent.generatedAt).toLocaleDateString()} at {new Date(recent.generatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          {formatDateEST(recent.generatedAt)} at {formatTimeEST(recent.generatedAt)}
                         </p>
                         <div className="mt-2 space-y-0.5 text-xs">
                           <div className="flex">

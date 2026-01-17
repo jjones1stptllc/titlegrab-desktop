@@ -1,6 +1,6 @@
 {
   "name": "titlegrab-desktop",
-  "version": "1.0.21",
+  "version": "1.0.47",
   "description": "TitleGrab Pro Desktop - Live Research & Report Generation",
   "author": "1st PT LLC <support@titlegrab.com>",
   "main": "main.js",
@@ -191,7 +191,7 @@
     "electron-log": "^5.4.3",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.7.3",
-    "form-data": "^4.0.0",
+    "form-data": "^4.0.5",
     "fs-extra": "^11.3.3",
     "node-fetch": "^2.7.0"
   },

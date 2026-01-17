@@ -734,6 +734,17 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Time sync endpoint (returns server time in EST)
+app.get('/api/time', (req, res) => {
+  const now = new Date();
+  res.json({
+    timestamp: now.toISOString(),
+    unix: now.getTime(),
+    timezone: 'America/New_York',
+    formatted: now.toLocaleString('en-US', { timeZone: 'America/New_York' })
+  });
+});
+
 
 // ============================================
 // USER SETTINGS & CUSTOMIZATION

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
+import { formatTimestampEST } from './timeUtils'
 
-const API_URL = 'http://147.93.185.218'
+const API_URL = 'http://23.31.100.76'
 
 export default function AdminPanel() {
   const [costData, setCostData] = useState(null)
@@ -202,7 +203,7 @@ export default function AdminPanel() {
                 </div>
                 <div className="flex justify-between text-slate-400 mt-1">
                   <span>{log.operation}</span>
-                  <span>{new Date(log.timestamp).toLocaleString()}</span>
+                  <span>{formatTimestampEST(log.timestamp)}</span>
                 </div>
                 {log.inputTokens > 0 && (
                   <div className="text-slate-400 mt-1">

@@ -1,58 +1,48 @@
 import { useState, useEffect, useRef } from 'react'
 
-const API_URL = 'http://147.93.185.218'
+const API_URL = 'http://23.31.100.76'
 
 export default function ReportPreview({ data, metadata, userId = 'default', onClose, onGenerate }) {
+  const [editableData, setEditableData] = useState(data)
+  const [editableMetadata, setEditableMetadata] = useState(metadata)
   const [html, setHtml] = useState('')
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [showAdjustments, setShowAdjustments] = useState(false)
+  const [activeTab, setActiveTab] = useState('edit') // 'edit' or 'preview'
   const [templates, setTemplates] = useState([])
-  const [selectedTemplateId, setSelectedTemplateId] = useState(null)
-  const [adjustments, setAdjustments] = useState({
-    headerSpacing: 0,
-    sectionSpacing: 0,
-    itemSpacing: 0,
-    fontSize: 10,
-    margins: 0.5
-  })
-  const [editHistory, setEditHistory] = useState([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('none')
   const iframeRef = useRef(null)
+
+  // Hide BrowserView when modal opens, show when it closes
+  useEffect(() => {
+    window.electronAPI?.hideBrowser?.()
+    return () => {
+      window.electronAPI?.showBrowser?.()
+    }
+  }, [])
 
   useEffect(() => {
     loadTemplates()
   }, [])
 
   useEffect(() => {
-    if (selectedTemplateId !== null) {
+    if (activeTab === 'preview') {
       loadPreview()
     }
-  }, [data, metadata, selectedTemplateId])
-
-  useEffect(() => {
-    if (iframeRef.current?.contentDocument) {
-      applyAdjustments()
-    }
-  }, [adjustments])
+  }, [activeTab, editableData, editableMetadata, selectedTemplateId])
 
   const loadTemplates = async () => {
     try {
       const res = await fetch(`${API_URL}/api/settings/${userId}`)
       const settings = await res.json()
       setTemplates(settings.templates || [])
-      // Auto-select default template or first one
       if (settings.defaultTemplateId) {
         setSelectedTemplateId(settings.defaultTemplateId)
-      } else if (settings.templates?.length > 0) {
-        setSelectedTemplateId(settings.templates[0].id)
-      } else {
-        setSelectedTemplateId('none')
-        loadPreview() // Load without template
       }
     } catch (err) {
       console.error('Failed to load templates:', err)
-      setSelectedTemplateId('none')
-      loadPreview()
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -62,7 +52,12 @@ export default function ReportPreview({ data, metadata, userId = 'default', onCl
       const res = await fetch(`${API_URL}/api/preview-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data, metadata, userId, adjustments, templateId: selectedTemplateId })
+        body: JSON.stringify({ 
+          data: editableData, 
+          metadata: editableMetadata, 
+          userId, 
+          templateId: selectedTemplateId 
+        })
       })
       const result = await res.json()
       if (result.success) {
@@ -75,145 +70,126 @@ export default function ReportPreview({ data, metadata, userId = 'default', onCl
     }
   }
 
-  const applyAdjustments = () => {
-    const doc = iframeRef.current?.contentDocument
-    if (!doc) return
-
-    const body = doc.body
-    if (!body) return
-
-    // Apply font size
-    body.style.fontSize = `${adjustments.fontSize}pt`
-    
-    // Apply margins
-    body.style.padding = `${adjustments.margins}in`
-    
-    // Apply section spacing
-    doc.querySelectorAll('.section').forEach(el => {
-      el.style.marginBottom = `${20 + adjustments.sectionSpacing}px`
-    })
-    
-    // Apply item spacing
-    doc.querySelectorAll('.item').forEach(el => {
-      el.style.paddingTop = `${8 + adjustments.itemSpacing}px`
-      el.style.paddingBottom = `${8 + adjustments.itemSpacing}px`
-    })
-    
-    // Apply header spacing
-    doc.querySelectorAll('.header').forEach(el => {
-      el.style.marginBottom = `${20 + adjustments.headerSpacing}px`
-    })
-  }
-
-  const handlePrint = () => {
-    if (iframeRef.current) {
-      iframeRef.current.contentWindow.print()
-    }
-  }
-
   const handleGeneratePDF = async () => {
     setGenerating(true)
     try {
-      // Get the edited HTML from the iframe
-      const editedHtml = iframeRef.current?.contentDocument?.documentElement?.outerHTML || html
+      // Merge metadata and data together as the server expects
+      const reportData = {
+        ...editableMetadata,
+        ...editableData,
+        userId,
+        templateId: selectedTemplateId
+      }
       
-      const res = await fetch(`${API_URL}/api/generate-report-from-html`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          html: editedHtml, 
-          data, 
-          metadata, 
-          userId,
-          adjustments,
-          templateId: selectedTemplateId
-        })
-      })
-      const result = await res.json()
+      // Use IPC to generate report (opens save dialog)
+      const result = await window.electronAPI.generateReport(reportData)
       
-      if (result.success && onGenerate) {
-        onGenerate(result)
+      if (result.success) {
+        if (onGenerate) {
+          onGenerate(result)
+        }
+        onClose() // Close the modal after successful generation
+      } else {
+        console.error('Failed to generate PDF:', result.error)
+        alert('Failed to generate PDF: ' + (result.error || 'Unknown error'))
       }
     } catch (err) {
       console.error('Failed to generate PDF:', err)
+      alert('Failed to generate PDF: ' + err.message)
     } finally {
       setGenerating(false)
     }
   }
 
-  const handleResetAdjustments = () => {
-    setAdjustments({
-      headerSpacing: 0,
-      sectionSpacing: 0,
-      itemSpacing: 0,
-      fontSize: 10,
-      margins: 0.5
-    })
+  const updateDeed = (index, field, value) => {
+    setEditableData(prev => ({
+      ...prev,
+      deeds: prev.deeds.map((d, i) => i === index ? { ...d, [field]: value } : d)
+    }))
   }
 
-  const handleRefresh = () => {
-    loadPreview()
+  const updateDOT = (index, field, value) => {
+    setEditableData(prev => ({
+      ...prev,
+      deedsOfTrust: prev.deedsOfTrust.map((d, i) => i === index ? { ...d, [field]: value } : d)
+    }))
   }
+
+  const updateJudgment = (index, field, value) => {
+    setEditableData(prev => ({
+      ...prev,
+      judgments: prev.judgments.map((j, i) => i === index ? { ...j, [field]: value } : j)
+    }))
+  }
+
+  const updateLien = (index, field, value) => {
+    setEditableData(prev => ({
+      ...prev,
+      liens: prev.liens.map((l, i) => i === index ? { ...l, [field]: value } : l)
+    }))
+  }
+
+  const deleteItem = (type, index) => {
+    setEditableData(prev => ({
+      ...prev,
+      [type]: prev[type].filter((_, i) => i !== index)
+    }))
+  }
+
+  const totalItems = (editableData.deeds?.length || 0) + 
+                     (editableData.deedsOfTrust?.length || 0) + 
+                     (editableData.judgments?.length || 0) + 
+                     (editableData.liens?.length || 0)
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full h-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-6">
             <div>
-              <h2 className="text-base font-bold text-slate-800">Report Preview & Editor</h2>
-              <p className="text-xs text-slate-500">Edit fields directly or adjust layout to fix overlaps</p>
+              <h2 className="text-lg font-bold text-gray-900">Report Editor</h2>
+              <p className="text-sm text-gray-500">{totalItems} items extracted • Edit before generating</p>
             </div>
-            {/* Template Selector */}
-            <div className="flex items-center gap-2 ml-4">
-              <label className="text-xs text-slate-500">Template:</label>
-              <select
-                value={selectedTemplateId || ''}
-                onChange={(e) => setSelectedTemplateId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-slate-300 rounded-md bg-white focus:ring-2 focus:ring-blue-500"
+            {/* Tabs */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setActiveTab('edit')}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'edit' 
+                    ? 'bg-white text-gray-900 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
               >
-                <option value="none">No Template (Default)</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
+                ✏️ Edit Data
+              </button>
+              <button
+                onClick={() => setActiveTab('preview')}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'preview' 
+                    ? 'bg-white text-gray-900 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                👁️ Preview
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowAdjustments(!showAdjustments)}
-              className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-2 ${
-                showAdjustments ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => setSelectedTemplateId(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-              Adjust Layout
-            </button>
-            <button
-              onClick={handleRefresh}
-              className="px-3 py-1.5 text-sm border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
-            <button
-              onClick={handlePrint}
-              className="px-3 py-1.5 text-sm border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
-              Print
-            </button>
+              <option value="none">No Template</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
             <button
               onClick={handleGeneratePDF}
-              disabled={generating}
-              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400 flex items-center gap-2"
+              disabled={generating || totalItems === 0}
+              className="px-5 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {generating ? (
                 <>
@@ -221,17 +197,12 @@ export default function ReportPreview({ data, metadata, userId = 'default', onCl
                   Generating...
                 </>
               ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Generate PDF
-                </>
+                <>📄 Generate PDF</>
               )}
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -240,153 +211,201 @@ export default function ReportPreview({ data, metadata, userId = 'default', onCl
           </div>
         </div>
 
-        {/* Main content area */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Adjustments Panel */}
-          {showAdjustments && (
-            <div className="w-64 border-r border-slate-200 bg-slate-50 p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-sm text-slate-700">Layout Adjustments</h3>
-                <button
-                  onClick={handleResetAdjustments}
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  Reset
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                {/* Font Size */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Font Size: {adjustments.fontSize}pt
-                  </label>
-                  <input
-                    type="range"
-                    min="8"
-                    max="14"
-                    step="0.5"
-                    value={adjustments.fontSize}
-                    onChange={(e) => setAdjustments({ ...adjustments, fontSize: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Margins */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Page Margins: {adjustments.margins}"
-                  </label>
-                  <input
-                    type="range"
-                    min="0.25"
-                    max="1"
-                    step="0.05"
-                    value={adjustments.margins}
-                    onChange={(e) => setAdjustments({ ...adjustments, margins: parseFloat(e.target.value) })}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Header Spacing */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Header Spacing: {adjustments.headerSpacing > 0 ? '+' : ''}{adjustments.headerSpacing}px
-                  </label>
-                  <input
-                    type="range"
-                    min="-10"
-                    max="30"
-                    step="1"
-                    value={adjustments.headerSpacing}
-                    onChange={(e) => setAdjustments({ ...adjustments, headerSpacing: parseInt(e.target.value) })}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Section Spacing */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Section Spacing: {adjustments.sectionSpacing > 0 ? '+' : ''}{adjustments.sectionSpacing}px
-                  </label>
-                  <input
-                    type="range"
-                    min="-10"
-                    max="30"
-                    step="1"
-                    value={adjustments.sectionSpacing}
-                    onChange={(e) => setAdjustments({ ...adjustments, sectionSpacing: parseInt(e.target.value) })}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Item Spacing */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Item Spacing: {adjustments.itemSpacing > 0 ? '+' : ''}{adjustments.itemSpacing}px
-                  </label>
-                  <input
-                    type="range"
-                    min="-5"
-                    max="15"
-                    step="1"
-                    value={adjustments.itemSpacing}
-                    onChange={(e) => setAdjustments({ ...adjustments, itemSpacing: parseInt(e.target.value) })}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                  />
+        {/* Content */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'edit' ? (
+            <div className="h-full overflow-auto p-6 bg-gray-50">
+              {/* Metadata Section */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  📋 Report Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Client/Property</label>
+                    <input
+                      type="text"
+                      value={editableMetadata.client || ''}
+                      onChange={(e) => setEditableMetadata(prev => ({ ...prev, client: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Client name or property address"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Thru Date</label>
+                    <input
+                      type="date"
+                      value={editableMetadata.thruDate || ''}
+                      onChange={(e) => setEditableMetadata(prev => ({ ...prev, thruDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-200">
-                <p className="text-xs text-slate-500">
-                  💡 <strong>Tip:</strong> If text overlaps, try reducing font size or increasing section/item spacing.
-                </p>
-              </div>
+              {/* Deeds */}
+              {editableData.deeds?.length > 0 && (
+                <EditSection 
+                  title="Deeds" 
+                  icon="📜" 
+                  items={editableData.deeds}
+                  fields={['grantor', 'grantee', 'book', 'page', 'date', 'consideration']}
+                  onUpdate={updateDeed}
+                  onDelete={(i) => deleteItem('deeds', i)}
+                  color="blue"
+                />
+              )}
+
+              {/* Deeds of Trust */}
+              {editableData.deedsOfTrust?.length > 0 && (
+                <EditSection 
+                  title="Deeds of Trust" 
+                  icon="🏦" 
+                  items={editableData.deedsOfTrust}
+                  fields={['grantor', 'beneficiary', 'trustee', 'book', 'page', 'date', 'amount']}
+                  onUpdate={updateDOT}
+                  onDelete={(i) => deleteItem('deedsOfTrust', i)}
+                  color="emerald"
+                />
+              )}
+
+              {/* Judgments */}
+              {editableData.judgments?.length > 0 && (
+                <EditSection 
+                  title="Judgments" 
+                  icon="⚖️" 
+                  items={editableData.judgments}
+                  fields={['plaintiff', 'defendant', 'book', 'page', 'date', 'amount', 'case']}
+                  onUpdate={updateJudgment}
+                  onDelete={(i) => deleteItem('judgments', i)}
+                  color="amber"
+                />
+              )}
+
+              {/* Liens */}
+              {editableData.liens?.length > 0 && (
+                <EditSection 
+                  title="Liens" 
+                  icon="🔗" 
+                  items={editableData.liens}
+                  fields={['type', 'creditor', 'debtor', 'book', 'page', 'date', 'amount']}
+                  onUpdate={updateLien}
+                  onDelete={(i) => deleteItem('liens', i)}
+                  color="rose"
+                />
+              )}
+
+              {totalItems === 0 && (
+                <div className="text-center py-16 text-gray-500">
+                  <div className="text-5xl mb-4">📭</div>
+                  <p className="text-lg font-medium">No data extracted yet</p>
+                  <p className="text-sm mt-1">Capture some documents first, then come back to edit and generate your report</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Preview Tab */
+            <div className="h-full overflow-auto p-6 bg-gray-100">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                    <p className="text-gray-600">Generating preview...</p>
+                  </div>
+                </div>
+              ) : html ? (
+                <div className="mx-auto bg-white shadow-xl rounded-lg overflow-hidden" style={{ width: '8.5in', minHeight: '11in' }}>
+                  <iframe
+                    ref={iframeRef}
+                    srcDoc={html}
+                    className="w-full border-0"
+                    style={{ minHeight: '11in' }}
+                    title="Report Preview"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-gray-500">
+                    <p className="text-lg">No preview available</p>
+                    <p className="text-sm mt-1">Add some data in the Edit tab first</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
-          {/* Preview Area */}
-          <div className="flex-1 overflow-auto bg-slate-200 p-6">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                  <p className="text-slate-600">Loading preview...</p>
+// Editable Section Component
+function EditSection({ title, icon, items, fields, onUpdate, onDelete, color }) {
+  const colorClasses = {
+    blue: 'border-blue-200 bg-blue-50/50',
+    emerald: 'border-emerald-200 bg-emerald-50/50',
+    amber: 'border-amber-200 bg-amber-50/50',
+    rose: 'border-rose-200 bg-rose-50/50'
+  }
+
+  const headerColors = {
+    blue: 'text-blue-700',
+    emerald: 'text-emerald-700',
+    amber: 'text-amber-700',
+    rose: 'text-rose-700'
+  }
+
+  const fieldLabels = {
+    grantor: 'Grantor',
+    grantee: 'Grantee',
+    beneficiary: 'Beneficiary',
+    trustee: 'Trustee',
+    plaintiff: 'Plaintiff',
+    defendant: 'Defendant',
+    creditor: 'Creditor',
+    debtor: 'Debtor',
+    book: 'Book',
+    page: 'Page',
+    date: 'Date',
+    amount: 'Amount',
+    consideration: 'Consideration',
+    case: 'Case #',
+    type: 'Type'
+  }
+
+  return (
+    <div className={`bg-white rounded-xl border ${colorClasses[color]} p-5 mb-4`}>
+      <h3 className={`font-semibold mb-4 flex items-center gap-2 ${headerColors[color]}`}>
+        {icon} {title} ({items.length})
+      </h3>
+      <div className="space-y-4">
+        {items.map((item, index) => (
+          <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 relative group">
+            <button
+              onClick={() => onDelete(index)}
+              className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Delete item"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+            <div className="grid grid-cols-3 gap-3">
+              {fields.map(field => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{fieldLabels[field]}</label>
+                  <input
+                    type="text"
+                    value={item[field] || ''}
+                    onChange={(e) => onUpdate(index, field, e.target.value)}
+                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder={fieldLabels[field]}
+                  />
                 </div>
-              </div>
-            ) : (
-              <div className="mx-auto shadow-2xl" style={{ width: '8.5in', minHeight: '11in', background: 'white' }}>
-                <iframe
-                  ref={iframeRef}
-                  srcDoc={html}
-                  className="w-full border-0"
-                  style={{ minHeight: '11in' }}
-                  title="Report Preview"
-                  onLoad={() => applyAdjustments()}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer with instructions */}
-        <div className="p-2 border-t border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded bg-blue-400"></span>
-                Click any blue-bordered field to edit text
-              </span>
-              <span className="flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                Use "Adjust Layout" to fix overlapping text
-              </span>
+              ))}
             </div>
-            <span>Changes are applied when you Generate PDF</span>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   )

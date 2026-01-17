@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
-const API_URL = 'http://147.93.185.218'
+const API_URL = 'http://23.31.100.76'
 
 export default function Settings({ userId = 'default' }) {
   const [settings, setSettings] = useState({})

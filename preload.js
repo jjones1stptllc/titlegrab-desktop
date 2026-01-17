@@ -35,6 +35,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   processPdf: (filePath) => ipcRenderer.invoke('process-pdf', filePath),
   selectPdf: () => ipcRenderer.invoke('select-pdf'),
 
+  // File Upload to API server (bypasses browser security)
+  uploadFileToServer: (fileData, fileName, metadata) => ipcRenderer.invoke('upload-file-to-server', fileData, fileName, metadata),
+  
+  // Upload progress listener
+  onUploadProgress: (callback) => {
+    ipcRenderer.on('upload-progress', (event, data) => callback(data));
+  },
+  removeUploadProgressListener: () => {
+    ipcRenderer.removeAllListeners('upload-progress');
+  },
+
   // Auto-Updates
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 

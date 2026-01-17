@@ -23,8 +23,147 @@ let heartbeatInterval;
 let backendProcess = null;
 
 const BACKEND_PORT = 3000;
-const API_URL = `http://127.0.0.1:${BACKEND_PORT}`;
+const API_URL = 'http://23.31.100.76'; // Proxmox backend server (16 cores)
 const ADMIN_API_URL = 'https://www.titlegrab.com/admin/api/track';
+
+// ============================================
+// TIME SYNCHRONIZATION (NTP + EST)
+// ============================================
+const EST_TIMEZONE = 'America/New_York';
+let ntpTimeOffset = 0; // Offset between local clock and NTP time in ms
+let ntpLastSync = null;
+
+async function syncTimeWithNTP() {
+  const https = require('https');
+  const http = require('http');
+  
+  // Try local backend first (runs on user's machine, uses OS time which should be NTP-synced)
+  try {
+    const beforeRequest = Date.now();
+    const response = await new Promise((resolve, reject) => {
+      const req = http.get('http://localhost:3000/api/time', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } 
+          catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(2000, () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+    const afterRequest = Date.now();
+    const networkDelay = (afterRequest - beforeRequest) / 2;
+    
+    if (response && response.timestamp) {
+      const serverTime = new Date(response.timestamp).getTime();
+      ntpTimeOffset = serverTime - Date.now() + networkDelay;
+      ntpLastSync = new Date();
+      console.log(`[TimeSync] Synced with local backend. Offset: ${ntpTimeOffset}ms`);
+      return true;
+    }
+  } catch (error) {
+    console.warn('[TimeSync] Local backend sync failed:', error.message);
+  }
+  
+  // Try remote backend server (NTP-synced to time.nist.gov)
+  try {
+    const beforeRequest = Date.now();
+    const response = await new Promise((resolve, reject) => {
+      const req = http.get('http://23.31.100.76/api/time', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } 
+          catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(5000, () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+    const afterRequest = Date.now();
+    const networkDelay = (afterRequest - beforeRequest) / 2;
+    
+    if (response && response.timestamp) {
+      const serverTime = new Date(response.timestamp).getTime();
+      ntpTimeOffset = serverTime - Date.now() + networkDelay;
+      ntpLastSync = new Date();
+      console.log(`[TimeSync] Synced with remote backend. Offset: ${ntpTimeOffset}ms`);
+      return true;
+    }
+  } catch (error) {
+    console.warn('[TimeSync] Remote backend sync failed:', error.message);
+  }
+  
+  // Fallback to worldtimeapi.org
+  try {
+    const beforeRequest = Date.now();
+    const response = await new Promise((resolve, reject) => {
+      const req = https.get('https://worldtimeapi.org/api/timezone/America/New_York', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } 
+          catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(5000, () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+    const afterRequest = Date.now();
+    const networkDelay = (afterRequest - beforeRequest) / 2;
+    
+    if (response && response.datetime) {
+      const serverTime = new Date(response.datetime).getTime();
+      ntpTimeOffset = serverTime - Date.now() + networkDelay;
+      ntpLastSync = new Date();
+      console.log(`[TimeSync] Synced with worldtimeapi. Offset: ${ntpTimeOffset}ms`);
+      return true;
+    }
+  } catch (error) {
+    console.warn('[TimeSync] worldtimeapi sync failed:', error.message);
+  }
+  
+  console.log('[TimeSync] Using local system time (no offset)');
+  return false;
+}
+
+// Get NTP-adjusted current time
+function getNTPTime() {
+  return new Date(Date.now() + ntpTimeOffset);
+}
+
+// Schedule periodic re-sync every 30 minutes
+setInterval(syncTimeWithNTP, 30 * 60 * 1000);
+
+// IPC handlers for renderer process
+ipcMain.handle('get-ntp-time', () => {
+  return {
+    timestamp: getNTPTime().toISOString(),
+    offset: ntpTimeOffset,
+    lastSync: ntpLastSync ? ntpLastSync.toISOString() : null
+  };
+});
+
+ipcMain.handle('get-est-date', () => {
+  const now = getNTPTime();
+  return now.toLocaleDateString('en-CA', { timeZone: EST_TIMEZONE }); // YYYY-MM-DD
+});
+
+ipcMain.handle('get-est-display-date', () => {
+  const now = getNTPTime();
+  return now.toLocaleDateString('en-US', { 
+    timeZone: EST_TIMEZONE,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+});
+
+ipcMain.handle('format-timestamp-est', (event, timestamp) => {
+  const d = new Date(timestamp);
+  return d.toLocaleString('en-US', { timeZone: EST_TIMEZONE });
+});
 
 // ============================================
 // BACKEND SERVER MANAGEMENT
@@ -806,7 +945,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      devTools: isDev // Disable DevTools in production
+      devTools: isDev, // Disable DevTools in production
+      webSecurity: false // Allow HTTP requests to our API server
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 }
@@ -1205,6 +1345,161 @@ ipcMain.handle('select-pdf', async () => {
   }
 });
 
+// Upload file to API server (bypasses browser security restrictions)
+// Uses built-in Node.js http module - no external dependencies
+// Streams progress updates back to renderer via SSE
+ipcMain.handle('upload-file-to-server', async (event, fileData, fileName, metadata) => {
+  try {
+    const http = require('http');
+    const crypto = require('crypto');
+    
+    // Get the sender's window to send progress updates
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    
+    // Determine MIME type from extension
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+      '.pdf': 'application/pdf',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.html': 'text/html',
+      '.htm': 'text/html'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const buffer = Buffer.from(fileData);
+    const jobId = crypto.randomUUID();
+    
+    // Build multipart form data manually
+    const boundary = '----FormBoundary' + crypto.randomBytes(16).toString('hex');
+    const CRLF = '\r\n';
+    
+    const parts = [];
+    
+    // File part
+    parts.push(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="file"; filename="${fileName}"${CRLF}` +
+      `Content-Type: ${contentType}${CRLF}${CRLF}`
+    );
+    parts.push(buffer);
+    parts.push(CRLF);
+    
+    // jobId part
+    parts.push(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="jobId"${CRLF}${CRLF}` +
+      `${jobId}${CRLF}`
+    );
+    
+    // metadata part
+    parts.push(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="metadata"${CRLF}${CRLF}` +
+      `${JSON.stringify(metadata || {})}${CRLF}`
+    );
+    
+    // End boundary
+    parts.push(`--${boundary}--${CRLF}`);
+    
+    // Combine all parts
+    const body = Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
+    
+    console.log(`[Upload] Sending ${fileName} (${buffer.length} bytes, ${contentType}) to ${API_URL}/api/process-file, jobId: ${jobId}`);
+    
+    // Connect to SSE progress endpoint
+    let sseReq = null;
+    const connectSSE = () => {
+      const sseUrl = new URL(`${API_URL}/api/progress/${jobId}`);
+      sseReq = http.get({
+        hostname: sseUrl.hostname,
+        port: sseUrl.port || 80,
+        path: sseUrl.pathname,
+        headers: { 'Accept': 'text/event-stream' }
+      }, (res) => {
+        res.on('data', (chunk) => {
+          const lines = chunk.toString().split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.substring(6));
+                console.log(`[Progress] ${data.stage}: ${data.message} (${Math.round(data.progress * 100)}%)`);
+                // Send progress to renderer
+                if (senderWindow && !senderWindow.isDestroyed()) {
+                  senderWindow.webContents.send('upload-progress', {
+                    jobId,
+                    stage: data.stage,
+                    progress: data.progress,
+                    message: data.message,
+                    detail: data.detail
+                  });
+                }
+              } catch (e) { /* ignore parse errors */ }
+            }
+          }
+        });
+      });
+      sseReq.on('error', () => { /* SSE connection error - non-fatal */ });
+    };
+    
+    // Start SSE connection
+    connectSSE();
+    
+    return new Promise((resolve, reject) => {
+      const url = new URL(`${API_URL}/api/process-file`);
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length
+        },
+        timeout: 600000  // 10 minutes for large OCR documents
+      };
+      
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          // Close SSE connection
+          if (sseReq) sseReq.destroy();
+          
+          try {
+            const result = JSON.parse(data);
+            console.log('[Upload] Server response:', result.success ? 'success' : result.error);
+            resolve(result);
+          } catch (e) {
+            console.error('[Upload] Parse error:', e.message, 'Raw:', data.substring(0, 200));
+            resolve({ success: false, error: 'Invalid server response' });
+          }
+        });
+      });
+      
+      req.on('error', (e) => {
+        if (sseReq) sseReq.destroy();
+        console.error('[Upload] Request error:', e.message);
+        resolve({ success: false, error: e.message });
+      });
+      
+      req.on('timeout', () => {
+        if (sseReq) sseReq.destroy();
+        req.destroy();
+        resolve({ success: false, error: 'Request timed out' });
+      });
+      
+      req.write(body);
+      req.end();
+    });
+  } catch (error) {
+    console.error('[Upload] Error:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 
 // ============================================
 // BROWSER VIEW EVENTS
@@ -1447,7 +1742,7 @@ function setupAutoUpdater() {
   // Configure for self-hosted update server
   autoUpdater.setFeedURL({
     provider: 'generic',
-    url: 'http://147.93.185.218/updates'
+    url: 'http://23.31.100.76/updates'
   });
 
   // DON'T auto-download - we want to ask user first
@@ -1844,6 +2139,10 @@ app.whenReady().then(async () => {
     await startBackendServer();
     await waitForBackend();
     console.log('[App] Backend ready');
+    
+    // Sync time with NTP server (EST timezone) - after backend is ready
+    console.log('[App] Syncing time with NTP...');
+    syncTimeWithNTP();
   } catch (err) {
     console.error('[App] Failed to start backend:', err);
     dialog.showErrorBox('Backend Error', 'Failed to start the processing server. Please restart the application.');

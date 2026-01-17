@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
+import { formatDateEST } from './timeUtils'
 
-const API_URL = 'http://147.93.185.218'
+const API_URL = 'http://23.31.100.76'
 
 export default function UserManagement({ onClose }) {
   const [users, setUsers] = useState([])
@@ -141,8 +142,8 @@ export default function UserManagement({ onClose }) {
                   <div className="font-medium text-white">{user.name || user.email}</div>
                   <div className="text-sm text-gray-400">{user.email}</div>
                   <div className="text-xs text-gray-500">
-                    Created: {new Date(user.createdAt).toLocaleDateString()}
-                    {user.lastSignIn && ` | Last login: ${new Date(user.lastSignIn).toLocaleDateString()}`}
+                    Created: {formatDateEST(user.createdAt)}
+                    {user.lastSignIn && ` | Last login: ${formatDateEST(user.lastSignIn)}`}
                   </div>
                 </div>
                 <button
