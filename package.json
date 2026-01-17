@@ -13,9 +13,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:mac": "vite build && electron-builder --mac",
-    "dist:win": "vite build && electron-builder --win",
-    "install-backend": "cd backend && npm install",
-    "postinstall": "npm run install-backend"
+    "dist:win": "vite build && electron-builder --win"
   },
   "build": {
     "appId": "com.1stptllc.titlegrab",
@@ -93,30 +91,7 @@
       "node_modules/mime-types/**/*",
       "node_modules/mime-db/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!node_modules/.cache/**/*",
-          "!uploads/**/*",
-          "!temp/**/*",
-          "!captures/**/*",
-          "!screenshots/**/*",
-          "!ocr-output/**/*",
-          "!results/**/*",
-          "!reports/**/*"
-        ]
-      },
-      {
-        "from": "bin/${os}",
-        "to": "bin",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
+    "extraResources": [],
     "mac": {
       "category": "public.app-category.business",
       "hardenedRuntime": true,
@@ -127,12 +102,7 @@
         "pkg",
         "zip"
       ],
-      "extraResources": [
-        {
-          "from": "bin/mac",
-          "to": "bin"
-        }
-      ]
+      "extraResources": []
     },
     "pkg": {
       "license": "LICENSE.rtf",
@@ -168,12 +138,7 @@
           ]
         }
       ],
-      "extraResources": [
-        {
-          "from": "bin/win",
-          "to": "bin"
-        }
-      ]
+      "extraResources": []
     },
     "nsis": {
       "oneClick": false,
